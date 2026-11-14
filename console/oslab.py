@@ -959,12 +959,27 @@ def macos_session_state(root: str) -> dict:
     return {"appium": reachable, "sessions": sessions}
 
 
+def _macos_bundle_id_for_app(app: str) -> str:
+    """The bundle identifier of an installed app by name (`id of app …`): a metadata read that
+    needs no automation permission. Names that could break the quoting are refused."""
+    if not isinstance(app, str) or not app or len(app) > 120 or any(c in app for c in '"\\\r\n\x00'):
+        raise PlanError("Invalid app name")
+    code, output = _capture(["osascript", "-e", f'id of app "{app}"'], timeout=15)
+    bundle = output.strip()
+    if code != 0 or "." not in bundle or not _BUNDLE_ID.match(bundle):
+        raise PlanError(f"Could not resolve a bundle id for {app}; the app may not be installed")
+    return bundle
+
+
 def macos_session_open(root: str, data: dict) -> dict:
-    """Open one mac2 session for an app bundle id. Armed control mode only; a repeated open
-    returns the session that is already open, and disarming closes every session."""
+    """Open one mac2 session for an app bundle id (or an app name, resolved here). Armed
+    control mode only; a repeated open returns the session that is already open, and
+    disarming closes every session."""
     if not _macos_control_armed():
         raise PlanError("Control mode is not armed; arm the app mirror to open a deep-inspect session")
     bundle = data.get("bundleId")
+    if bundle in (None, "") and data.get("app"):
+        bundle = _macos_bundle_id_for_app(data.get("app"))
     if not isinstance(bundle, str) or not _BUNDLE_ID.match(bundle) or "." not in bundle:
         raise PlanError("bundleId must look like com.example.app")
     with _MACOS_SESSIONS_LOCK:
