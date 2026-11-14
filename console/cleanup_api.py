@@ -218,7 +218,10 @@ class CleanupJobStore:
                 target(*args)
             finally:
                 # CLW-04: every finished job changes what the widget shows.
-                publish_widget(args[0])
+                # Workers with no root argument (the hook clean closes over
+                # it) skip the refresh here — their completion paths publish.
+                if args:
+                    publish_widget(args[0])
         try:
             threading.Thread(target=run_and_refresh, args=(), daemon=True).start()
         except RuntimeError as exc:
@@ -808,6 +811,7 @@ def run_hook_clean(root):
                 job.error = "{0}: {1}".format(type(exc).__name__, exc)
             finally:
                 job.finishedAt = time.time()
+                publish_widget(root)  # CLW-04: the hook run changed the widget's story
 
         return JOBS._spawn(job, work, ())
 
