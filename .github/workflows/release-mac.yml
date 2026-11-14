@@ -41,6 +41,9 @@ jobs:
           npm ci --no-audit --no-fund --prefix app
           node app/scripts/stage-runtime.mjs
           node app/scripts/stage-python-helper.mjs
+          # CLW-09: the widget targets compile in the dry run too (no signing).
+          command -v xcodegen >/dev/null || brew install xcodegen
+          bash app/widget/build.sh
           (cd app && npx tauri build --target universal-apple-darwin --bundles app,dmg)
           test -d app/src-tauri/target/universal-apple-darwin/release/bundle/macos/os-lab.app
           version="$(node -p "require('./app/src-tauri/tauri.conf.json').version")"
