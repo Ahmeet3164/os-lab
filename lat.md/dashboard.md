@@ -33,14 +33,21 @@ against `xcrun simctl` (see [[ios-lab]]).
 
 When the macOS Lab is ready, [[dashboard/src/views/macos-app-mirror.tsx]]
 floats a draggable, resizable mirror of one real window on this Mac, fed by
-the read-only `/api/labs/macos/apps`, `/api/labs/macos/apps/<id>/screenshot`
-and `/api/labs/macos/apps/<id>/elements` endpoints.
+read-only endpoints under `/api/labs/macos/apps` (list, screenshot, stream,
+elements) and `/api/labs/macos/audit`.
 
 Mirror and hotspot clicks preview a `macos-click` action like any other;
 only while control mode is armed (an explicit toggle that disarms itself
 after ten minutes) do clicks land immediately through
 `/api/labs/macos/click`, which stays localhost-only like every other POST.
-See [[ios-lab]] for permissions.
+The stream is multipart MJPEG with a poll fallback; the elements endpoint
+takes a `revision` query and powers a diff overlay. Right-click or
+long-press a hotspot for the input family (double, right, type, key —
+previewed `macos-input`, typing never sends Return), Deep inspect opens one
+armed-only mac2 session per app through `/api/labs/macos/session*` and
+routes hotspot actions through stable element ids, and the toolbar
+downloads the local audit log from `/api/labs/macos/audit.json`. See
+[[ios-lab]] for permissions.
 
 ## UX readiness
 

@@ -71,6 +71,43 @@ permission). `macos-app.sh click` brings the owning app forward and posts
 one CGEvent click; the mirror previews it like any action, and clicks land
 without a preview only while control mode is armed.
 
+The app mirror roadmap (MIR-01…06, see
+[[ios-lab/PLAN-macos-mirror-roadmap.md]]) extends the same pipeline:
+
+- **Input family (MIR-01)** — `macos-app.sh input <pid> <x> <y> <kind>`
+  posts double-clicks, right-clicks, typed text and one allowlisted key.
+  Typed text is echoed in its preview and never sends Return; Enter is its
+  own explicit `key enter` action. Right-click or long-press a hotspot for
+  the menu; the panel routes everything through the same preview → confirm
+  (or armed) flow as the single click.
+- **Diff overlay (MIR-02)** — `GET …/elements?revision=` returns
+  `{added, removed, changed}` against the cached previous tree when the
+  revision token matches; the panel rings new hotspots and fades removed
+  ones. The 150-element cap is unchanged.
+- **Display scale (MIR-03)** — every window record carries its display's
+  backing scale (CGDisplayMode pixel-to-point ratio through ctypes;
+  `CGWindowCopyScreenInfo` is not exported on current macOS), and
+  `macos-app.sh doctor` prints a displays report (origins, sizes, scales).
+  Hotspot math stays in points end to end.
+- **Streaming mirror (MIR-04)** — `GET …/stream?fps=` streams multipart
+  MJPEG with no-store headers; the loop stops on client disconnect or after
+  ten minutes. The panel fetches it with an AbortController (pauses on
+  hidden tabs, picks the fps from pointer proximity) and falls back to the
+  1.5 s poll when the stream fails.
+- **Deep inspect (MIR-05)** — the console opens one Appium mac2 session per
+  app bundle id (resolving an app name via `id of app …` when asked), only
+  while control mode is armed, and closes it on disarm, panel hide, tab
+  unload or app quit. Hotspot actions then carry stable WebDriver element
+  ids; without a session they stay CGEvent coordinates. A previewed element
+  action runs `macos-app.sh element <session> <element> <kind>` as a job.
+- **Audit log (MIR-06)** — every host action the console performs for the
+  mirror (armed clicks and input, deep-inspect sessions, arm/disarm, and
+  the confirmed halves of previewed actions with their token digest) lands
+  in a bounded ring plus `ios-lab/artifacts/macos-audit-<date>.jsonl`, with
+  a small frame thumbnail per action. `GET /api/labs/macos/audit` lists the
+  rows and `/api/labs/macos/audit.json` downloads the file; nothing leaves
+  this Mac.
+
 ## Research
 
 The top iOS-in-Docker options, networking and operational limits.
