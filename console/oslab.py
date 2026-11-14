@@ -18,6 +18,7 @@ The web console in android-lab/lab/web_ui.py exposes these over a localhost JSON
 
 from __future__ import annotations
 
+import base64
 import ctypes
 import hashlib
 import hmac
@@ -33,6 +34,8 @@ import sys
 import tempfile
 import threading
 import time
+import urllib.error
+import urllib.request
 import uuid
 
 # ── Static lab model ─────────────────────────────────────────────────────────
@@ -121,9 +124,9 @@ LABCTL_ACTIONS = ["status", "doctor", "urls", "logs", "monitor", "start", "stop"
 MAC_ACTIONS = ["status", "doctor", "setup", "start", "stop", "appium-install", "appium-start", "appium-stop",
                "idb-install", "idb-start", "idb-stop", "xcuitest-smoke"]
 # The macOS Lab automates installed macOS applications through Appium mac2 — no simulator.
-# macos-click drives the app mirror panel (never rendered as a plain button).
+# macos-click, macos-input and macos-element drive the app mirror panel (never plain buttons).
 MACOS_APP_ACTIONS = ["status", "doctor", "setup", "appium-install", "appium-start", "appium-stop", "macos-smoke",
-                     "macos-click"]
+                     "macos-click", "macos-input", "macos-element"]
 
 ACTION_INFO = {
     "csv-merge": ("Join catalogs", "Join operator catalogs into private storage."),
@@ -154,6 +157,8 @@ ACTION_INFO = {
     "xcuitest-smoke": ("XCUITest smoke test", "Run one real XCUITest session through Appium and WebDriverAgent on the booted simulator."),
     "macos-smoke": ("macOS app smoke test", "Run one real Appium mac2 session that activates Finder on this Mac."),
     "macos-click": ("Click in app", "Bring the mirrored app to the front and click once at the chosen point."),
+    "macos-input": ("Mirror input action", "Run the previewed double-click, right-click, typed text or key press from the app mirror. Typed text never sends Return."),
+    "macos-element": ("Deep-inspect element action", "Click or type into one element through the open mac2 deep-inspect session for the mirrored app."),
 }
 
 # On the iOS Lab's native path "start" and "stop" drive the iOS Simulator, not a container stack.
@@ -404,6 +409,29 @@ class _MacosWindows:
         cf.CFStringGetCString.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_long, ctypes.c_uint32]
         cf.CFNumberGetValue.restype = ctypes.c_bool
         cf.CFNumberGetValue.argtypes = [ctypes.c_void_p, ctypes.c_long, ctypes.POINTER(ctypes.c_int64)]
+
+        class _CGPoint(ctypes.Structure):
+            _fields_ = [("x", ctypes.c_double), ("y", ctypes.c_double)]
+
+        class _CGSize(ctypes.Structure):
+            _fields_ = [("width", ctypes.c_double), ("height", ctypes.c_double)]
+
+        class _CGRect(ctypes.Structure):
+            _fields_ = [("origin", _CGPoint), ("size", _CGSize)]
+
+        self._rect = _CGRect
+        cg.CGGetActiveDisplayList.restype = ctypes.c_int32
+        cg.CGGetActiveDisplayList.argtypes = [ctypes.c_uint32, ctypes.POINTER(ctypes.c_uint32),
+                                              ctypes.POINTER(ctypes.c_uint32)]
+        cg.CGDisplayBounds.restype = _CGRect
+        cg.CGDisplayBounds.argtypes = [ctypes.c_uint32]
+        cg.CGDisplayCopyDisplayMode.restype = ctypes.c_void_p
+        cg.CGDisplayCopyDisplayMode.argtypes = [ctypes.c_uint32]
+        for name in ("CGDisplayModeGetWidth", "CGDisplayModeGetHeight",
+                     "CGDisplayModeGetPixelWidth", "CGDisplayModeGetPixelHeight"):
+            fn = getattr(cg, name)
+            fn.restype = ctypes.c_size_t
+            fn.argtypes = [ctypes.c_void_p]
         cf.CFGetTypeID.restype = ctypes.c_ulong
         cf.CFGetTypeID.argtypes = [ctypes.c_void_p]
         cf.CFStringGetTypeID.restype = ctypes.c_ulong
@@ -426,7 +454,30 @@ class _MacosWindows:
             return None
         return self._string(ref) if self.cf.CFGetTypeID(ref) == self.cf.CFStringGetTypeID() else self._number(ref)
 
+    def screens(self) -> list[dict]:
+        """Displays with origin, size and backing scale (MIR-03): CGWindowBounds are points and
+        pixels are 2x on Retina, so remote coordinates can be reasoned about per display. The
+        scale is the current display mode's pixel-to-point ratio (CGWindowCopyScreenInfo is not
+        exported on current macOS)."""
+        count = ctypes.c_uint32()
+        ids = (ctypes.c_uint32 * 16)()
+        if self.cg.CGGetActiveDisplayList(16, ids, ctypes.byref(count)) != 0:
+            return []
+        out = []
+        for i in range(count.value):
+            did = ids[i]
+            rect = self.cg.CGDisplayBounds(did)
+            mode = self.cg.CGDisplayCopyDisplayMode(did)
+            scale = 1.0
+            if mode:
+                points, pixels = self.cg.CGDisplayModeGetWidth(mode), self.cg.CGDisplayModeGetPixelWidth(mode)
+                scale = round(pixels / points, 2) if points else 1.0
+            out.append({"x": int(rect.origin.x), "y": int(rect.origin.y),
+                        "width": int(rect.size.width), "height": int(rect.size.height), "scale": scale})
+        return out
+
     def windows(self) -> list[dict]:
+        screens = self.screens()
         arr = self.cg.CGWindowListCopyWindowInfo(1, 0)  # on-screen only
         out = []
         for i in range(self.cf.CFArrayGetCount(arr)):
@@ -438,11 +489,14 @@ class _MacosWindows:
             height = self.value(self.cf.CFDictionaryGetValue(d, self._cfstr("kCGWindowBounds")), "Height")
             if not owner or not width or not height or width < 40 or height < 40:
                 continue  # desktop-stage and helper windows are not app windows
+            x = self.value(self.cf.CFDictionaryGetValue(d, self._cfstr("kCGWindowBounds")), "X")
+            y = self.value(self.cf.CFDictionaryGetValue(d, self._cfstr("kCGWindowBounds")), "Y")
+            scale = next((s["scale"] for s in screens
+                          if s["width"] and s["height"]
+                          and s["x"] <= x < s["x"] + s["width"] and s["y"] <= y < s["y"] + s["height"]), 1.0)
             out.append({"windowId": self.value(d, "kCGWindowNumber"), "pid": self.value(d, "kCGWindowOwnerPID"),
                         "app": owner, "title": self.value(d, "kCGWindowName") or "",
-                        "x": self.value(self.cf.CFDictionaryGetValue(d, self._cfstr("kCGWindowBounds")), "X"),
-                        "y": self.value(self.cf.CFDictionaryGetValue(d, self._cfstr("kCGWindowBounds")), "Y"),
-                        "width": width, "height": height})
+                        "x": x, "y": y, "width": width, "height": height, "scale": scale})
         return out
 
 
@@ -493,7 +547,42 @@ def macos_window_screenshot(window_id: int) -> bytes:
             pass
 
 
-def macos_window_elements(root: str, window_id: int) -> dict:
+# MIR-02: the last read element tree per window powers the diff overlay. A revision token is
+# the digest of the tree, so the same tree keeps the same token and a matching token means the
+# client is asking for a diff against exactly this snapshot.
+_MACOS_ELEMENTS: dict[int, dict] = {}
+_MACOS_ELEMENTS_LOCK = threading.Lock()
+_ELEMENT_MATCH_POINT = 24  # a same-role, same-label element within this distance is unchanged
+
+
+def _element_revision(elements: list[dict]) -> str:
+    digest = hashlib.sha256()
+    for element in elements:
+        digest.update(json.dumps(element, sort_keys=True).encode())
+    return digest.hexdigest()[:16]
+
+
+def _diff_elements(previous: list[dict], current: list[dict]) -> dict:
+    """Added / removed / changed entries between two element trees, matched by role+label and
+    geometry proximity. Every list is bounded like the tree itself (150 entries)."""
+    unused = list(previous)
+    added, changed = [], []
+    for element in current:
+        same = [p for p in unused if p["role"] == element["role"] and p["label"] == element["label"]]
+        near = min(same, key=lambda p: abs(p["x"] - element["x"]) + abs(p["y"] - element["y"])) if same else None
+        if near is not None and abs(near["x"] - element["x"]) <= _ELEMENT_MATCH_POINT \
+                and abs(near["y"] - element["y"]) <= _ELEMENT_MATCH_POINT \
+                and abs(near["w"] - element["w"]) <= 8 and abs(near["h"] - element["h"]) <= 8:
+            unused.remove(near)
+        elif near is not None:
+            unused.remove(near)
+            changed.append({**element, "movedFrom": {"x": near["x"], "y": near["y"]}})
+        else:
+            added.append(element)
+    return {"added": added[:150], "changed": changed[:150], "removed": unused[:150]}
+
+
+def macos_window_elements(root: str, window_id: int, revision: str | None = None) -> dict:
     """The accessibility tree of one window as window-relative hotspots, from System Events."""
     if host_os() != "macos":
         raise PlanError("The app mirror needs a Mac")
@@ -536,8 +625,21 @@ def macos_window_elements(root: str, window_id: int) -> dict:
                 or element["x"] + element["w"] <= 0 or element["y"] + element["h"] <= 0:
             continue
         elements.append(element)
-    return {"windowId": window_id, "app": window["app"], "bounds": {"x": window["x"], "y": window["y"],
-            "width": window["width"], "height": window["height"]}, "elements": elements}
+    with _MACOS_ELEMENTS_LOCK:
+        token = _element_revision(elements)
+        cached = _MACOS_ELEMENTS.get(window_id)
+        result = {"windowId": window_id, "app": window["app"], "revision": token,
+                  "bounds": {"x": window["x"], "y": window["y"],
+                             "width": window["width"], "height": window["height"]},
+                  "elements": elements,
+                  "diff": _diff_elements(cached["elements"], elements)
+                  if revision and cached and cached["revision"] == revision and revision != token
+                  else {"added": [], "changed": [], "removed": []}}
+        _MACOS_ELEMENTS[window_id] = {"revision": token, "elements": elements, "at": time.time()}
+        if len(_MACOS_ELEMENTS) > 16:  # keep the cache bounded to the windows seen recently
+            oldest = min(_MACOS_ELEMENTS, key=lambda k: _MACOS_ELEMENTS[k]["at"])
+            _MACOS_ELEMENTS.pop(oldest, None)
+    return result
 
 
 def macos_control_state() -> dict:
@@ -549,12 +651,13 @@ def macos_control_state() -> dict:
         return {"armed": armed, "expiresInSec": int(_MACOS_CONTROL_TIMEOUT - (time.time() - _MACOS_CONTROL["armedAt"])) if armed else 0}
 
 
-def macos_control_arm(armed: bool) -> dict:
+def macos_control_arm(root: str, armed: bool) -> dict:
     if not isinstance(armed, bool):
         raise PlanError("armed must be true or false")
     with _MACOS_CONTROL_LOCK:
         _MACOS_CONTROL["armed"] = armed
         _MACOS_CONTROL["armedAt"] = time.time()
+    _macos_audit(root, "arm" if armed else "disarm")
     return macos_control_state()
 
 
@@ -578,9 +681,395 @@ def macos_control_click(root: str, data: dict) -> dict:
     code, output = _capture(["bash", script, "click", str(values["pid"]), str(values["x"]), str(values["y"])], timeout=30)
     with _MACOS_CONTROL_LOCK:
         _MACOS_CONTROL["armedAt"] = time.time()  # each click slides the disarm timer
+    _macos_audit(root, "click", window=_macos_window_for_pid(values["pid"]),
+                 detail={"x": values["x"], "y": values["y"], "ok": code == 0}, thumbnail=True)
     if code != 0:
         raise PlanError(output.strip()[:200] or "The click did not run")
     return {"ok": True, **values}
+
+
+# ── macOS app mirror roadmap (MIR-01…06) ─────────────────────────────────────
+# The app-mirror follow-ups: an input family beyond the single click (MIR-01), a diff overlay
+# for the accessibility tree (MIR-02), per-display scale factors (MIR-03), an MJPEG stream
+# (MIR-04), mac2 deep-inspect sessions with stable element ids (MIR-05) and a local audit log
+# of everything the console does on this Mac (MIR-06). The guardrails do not move: read-only
+# endpoints by default, preview → confirm, armed control mode that disarms itself, localhost
+# POSTs only.
+
+# MIR-06: every host action the console performs for the app mirror lands in a bounded
+# in-memory ring and an append-only JSONL file under ios-lab/artifacts/. Rows carry a small
+# frame thumbnail at action time; nothing ever leaves this Mac.
+_MACOS_AUDIT_MAX = 500
+_MACOS_AUDIT: list[dict] = []
+_MACOS_AUDIT_LOCK = threading.Lock()
+
+
+def _macos_window_for_pid(pid: int) -> dict | None:
+    """The largest visible window of one pid, for audit rows; None when it is gone."""
+    candidates = [w for w in macos_windows()["windows"] if w.get("pid") == pid]
+    return max(candidates, key=lambda w: w["width"] * w["height"]) if candidates else None
+
+
+def _macos_audit_thumbnail(window_id: int) -> str | None:
+    """A small base64 JPEG of the window at action time; None when capture or resize fails."""
+    fd, png = tempfile.mkstemp(suffix=".png")
+    fd2, small = tempfile.mkstemp(suffix=".jpg")
+    try:
+        os.close(fd)
+        os.close(fd2)
+        code, _ = _capture(["screencapture", "-x", "-o", f"-l{window_id}", png], timeout=15)
+        if code == 0:
+            _capture(["sips", "-s", "format", "jpeg", "-s", "formatOptions", "50", "-Z", "480", png,
+                      "--out", small], timeout=15)
+            with open(small, "rb") as f:
+                data = f.read()
+            if data.startswith(b"\xff\xd8"):
+                return base64.b64encode(data).decode()
+    except OSError:
+        return None
+    finally:
+        for path in (png, small):
+            try:
+                os.unlink(path)
+            except OSError:
+                pass
+    return None
+
+
+def _macos_audit(root: str | None, kind: str, *, window: dict | None = None,
+                 detail: dict | None = None, thumbnail: bool = False) -> None:
+    """Record one audit row (MIR-06). Never raises: auditing must not break the action."""
+    row: dict = {"time": time.time(), "kind": kind}
+    if window:
+        row.update({"app": window.get("app"), "windowId": window.get("windowId"),
+                    "title": (window.get("title") or "")[:120]})
+    if detail:
+        row.update(detail)
+    if thumbnail and window and window.get("windowId"):
+        try:
+            row["thumbnail"] = _macos_audit_thumbnail(int(window["windowId"]))
+        except (OSError, ValueError):
+            row["thumbnail"] = None
+    with _MACOS_AUDIT_LOCK:
+        _MACOS_AUDIT.append(row)
+        del _MACOS_AUDIT[:-_MACOS_AUDIT_MAX]
+    if root:
+        try:
+            folder = os.path.join(root, "ios-lab", "artifacts")
+            os.makedirs(folder, exist_ok=True)
+            with open(os.path.join(folder, "macos-audit-%s.jsonl" % time.strftime("%Y%m%d")),
+                      "a", encoding="utf-8") as f:
+                f.write(json.dumps(row) + "\n")
+        except OSError:
+            pass
+
+
+def macos_audit_rows() -> dict:
+    """The last audit rows for the panel; the full download includes every stored row."""
+    with _MACOS_AUDIT_LOCK:
+        return {"recording": True, "rows": [dict(r, thumbnail=None) for r in _MACOS_AUDIT[-200:]]}
+
+
+def macos_audit_download() -> bytes:
+    """The audit log as one JSON file with embedded thumbnails (panel download button)."""
+    with _MACOS_AUDIT_LOCK:
+        payload = {"generatedAt": time.time(), "recording": True, "rows": list(_MACOS_AUDIT)}
+    return json.dumps(payload).encode()
+
+
+# The mirror actions that run through the preview → confirm → job pipeline; the armed halves of
+# these (and arm/disarm, sessions) audit themselves where they run.
+_MACOS_MIRROR_ACTIONS = ("macos-click", "macos-input", "macos-element")
+
+
+def macos_audit_preview(root: str, request: dict, kind: str, token: str | None = None) -> None:
+    """Audit rows for the previewed half of the mirror pipeline (MIR-06): a plan preview and a
+    confirmed start. The token is recorded only as a short digest, never the signed secret."""
+    if not isinstance(request, dict) or request.get("lab") != "macos" \
+            or request.get("action") not in _MACOS_MIRROR_ACTIONS:
+        return
+    detail = {"action": request.get("action"), "x": request.get("clickX"), "y": request.get("clickY"),
+              "inputKind": request.get("inputKind"), "key": request.get("inputKey"),
+              "textLength": len(request.get("inputText") or "")}
+    if isinstance(token, str) and token:
+        detail["token"] = hashlib.sha256(token.encode()).hexdigest()[:16]
+    _macos_audit(root, kind, detail=detail)
+
+
+# MIR-01: the input family — double-click, right-click, type and press-key — with the same
+# preview → confirm (or armed) pipeline as the single click. Typing never sends Return:
+# newlines are refused here and in the script, and Enter is its own explicit key action.
+_MACOS_INPUT_KINDS = ("double", "right", "type", "key")
+_MACOS_INPUT_KEYS = ("tab", "escape", "delete", "forward-delete", "up", "down", "left", "right",
+                     "space", "enter")
+_INPUT_TEXT_MAX = 200
+
+
+def _validated_input(data: dict) -> dict:
+    """pid/x/y plus one kind with its payload, for the armed route and the plan builder alike."""
+    values = {}
+    for key in ("pid", "x", "y"):
+        try:
+            value = int(data.get(key))
+        except (TypeError, ValueError):
+            raise PlanError(f"{key} must be an integer") from None
+        if not 0 <= value <= 100000:
+            raise PlanError(f"{key} is out of range")
+        values[key] = value
+    kind = data.get("kind")
+    if kind not in _MACOS_INPUT_KINDS:
+        raise PlanError("kind must be one of: " + ", ".join(_MACOS_INPUT_KINDS))
+    values["kind"] = kind
+    if kind == "type":
+        text = data.get("text")
+        if not isinstance(text, str) or not text or len(text) > _INPUT_TEXT_MAX \
+                or not all(32 <= ord(c) <= 126 for c in text):
+            raise PlanError(f"The text must be 1-{_INPUT_TEXT_MAX} printable characters; "
+                            "Return is never sent by a type action")
+        values["text"] = text
+    if kind == "key":
+        if data.get("key") not in _MACOS_INPUT_KEYS:
+            raise PlanError("key must be one of: " + ", ".join(_MACOS_INPUT_KEYS))
+        values["key"] = data.get("key")
+    return values
+
+
+def _run_control_script(root: str, args: list[str], kind: str, values: dict) -> tuple[int, str]:
+    """One armed input action through macos-app.sh input, audited with a frame thumbnail."""
+    with _MACOS_CONTROL_LOCK:
+        armed = _MACOS_CONTROL["armed"] and time.time() - _MACOS_CONTROL["armedAt"] < _MACOS_CONTROL_TIMEOUT
+    if not armed:
+        raise PlanError("Control mode is not armed; arm the app mirror first")
+    script = _scoped(root, "ios-lab", "mac", "macos-app.sh")
+    code, output = _capture(["bash", script] + args, timeout=30)
+    with _MACOS_CONTROL_LOCK:
+        _MACOS_CONTROL["armedAt"] = time.time()
+    _macos_audit(root, "input-" + values["kind"], window=_macos_window_for_pid(values["pid"]),
+                 detail={"x": values["x"], "y": values["y"], "key": values.get("key"),
+                         "textLength": len(values.get("text", "")), "ok": code == 0}, thumbnail=True)
+    if code != 0:
+        raise PlanError(output.strip()[:200] or "The action did not run")
+    return code, output
+
+
+def macos_control_input(root: str, data: dict) -> dict:
+    """One immediate double-click, right-click, typed text or key press while control is armed."""
+    values = _validated_input(data)
+    args = ["input", str(values["pid"]), str(values["x"]), str(values["y"]), values["kind"]]
+    if values["kind"] == "type":
+        args.append(values["text"])
+    elif values["kind"] == "key":
+        args.append(values["key"])
+    _run_control_script(root, args, values["kind"], values)
+    return {"ok": True, **values}
+
+
+# MIR-04: the streaming mirror — one multipart MJPEG response instead of a poll per frame.
+_MACOS_STREAM_CAP = 600  # a stream never outlives ten minutes, so handlers cannot dangle
+
+
+def macos_window_stream(window_id: int, fps: float):
+    """Yield PNG frames for the multipart response at the requested pace. Ends when the
+    window is gone; the response handler also stops on client disconnect or the hard cap."""
+    interval = 1.0 / fps
+    while True:
+        try:
+            yield macos_window_screenshot(window_id)
+        except PlanError:
+            return
+        time.sleep(interval)
+
+
+# MIR-05: deep inspect — one Appium mac2 session per app bundle id with stable WebDriver
+# element ids behind the mirror. A session launches or activates the app, so it exists only
+# while control mode is armed and closes when control disarms, the panel hides or the app quits.
+_MACOS_SESSIONS: dict[str, dict] = {}
+_MACOS_SESSIONS_LOCK = threading.Lock()
+_MACOS_ELEMENT_ID_KEY = "element-6066-11e4-a52e-4f735466cecf"
+_BUNDLE_ID = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9._-]{0,198}[A-Za-z0-9])?$")
+_ELEMENT_ID = re.compile(r"^[A-Za-z0-9._-]{1,128}$")
+
+
+def _macos_appium_base(root: str) -> str:
+    config = env_entries(_read(os.path.join(root, "ios-lab", "mac", "config.env")))
+    return "http://{}:{}".format(config.get("APPIUM_HOST") or "127.0.0.1",
+                                 config.get("APPIUM_PORT") or "4723")
+
+
+def _appium_request(base: str, method: str, path: str, body: dict | None = None,
+                    timeout: float = 30) -> tuple[int, dict]:
+    """One Appium WebDriver call via stdlib urllib; returns (status, parsed body)."""
+    data = json.dumps(body or {}).encode() if body is not None or method == "POST" else None
+    request = urllib.request.Request(base + path, data=data, method=method,
+                                     headers={"Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            return response.status, json.loads(response.read().decode("utf-8", "replace") or "{}")
+    except urllib.error.HTTPError as e:
+        try:
+            return e.code, json.loads(e.read().decode("utf-8", "replace") or "{}")
+        except (OSError, ValueError):
+            return e.code, {}
+    except (OSError, ValueError) as e:
+        raise PlanError(f"Appium is not reachable: {e}") from None
+
+
+def _macos_control_armed() -> bool:
+    with _MACOS_CONTROL_LOCK:
+        armed = _MACOS_CONTROL["armed"] and time.time() - _MACOS_CONTROL["armedAt"] < _MACOS_CONTROL_TIMEOUT
+    return armed
+
+
+def _macos_sessions_enforce(root: str) -> None:
+    """Deep inspect exists only while control mode is armed; disarming closes every session."""
+    if _macos_control_armed():
+        return
+    with _MACOS_SESSIONS_LOCK:
+        sessions = list(_MACOS_SESSIONS.items())
+        _MACOS_SESSIONS.clear()
+    for bundle, entry in sessions:
+        try:
+            _appium_request(_macos_appium_base(root), "DELETE", f"/session/{entry['sessionId']}", timeout=15)
+        except PlanError:
+            pass
+        _macos_audit(root, "session-close", detail={"bundleId": bundle, "reason": "disarmed"})
+
+
+def _macos_sessions_entry(bundle: str, required: bool = True) -> dict | None:
+    if not isinstance(bundle, str) or not _BUNDLE_ID.match(bundle):
+        raise PlanError("Unknown deep-inspect session (invalid bundleId)")
+    with _MACOS_SESSIONS_LOCK:
+        entry = _MACOS_SESSIONS.get(bundle)
+    if required and entry is None:
+        raise PlanError("No deep-inspect session is open for that app; open one in the panel first")
+    return entry
+
+
+def macos_session_state(root: str) -> dict:
+    """The open deep-inspect sessions and whether Appium answers at all."""
+    _macos_sessions_enforce(root)
+    try:
+        _appium_request(_macos_appium_base(root), "GET", "/status", timeout=5)
+        reachable = True
+    except PlanError:
+        reachable = False
+    with _MACOS_SESSIONS_LOCK:
+        sessions = [{"bundleId": bundle, "sessionId": entry["sessionId"], "startedAt": entry["startedAt"]}
+                    for bundle, entry in _MACOS_SESSIONS.items()]
+    return {"appium": reachable, "sessions": sessions}
+
+
+def macos_session_open(root: str, data: dict) -> dict:
+    """Open one mac2 session for an app bundle id. Armed control mode only; a repeated open
+    returns the session that is already open, and disarming closes every session."""
+    if not _macos_control_armed():
+        raise PlanError("Control mode is not armed; arm the app mirror to open a deep-inspect session")
+    bundle = data.get("bundleId")
+    if not isinstance(bundle, str) or not _BUNDLE_ID.match(bundle) or "." not in bundle:
+        raise PlanError("bundleId must look like com.example.app")
+    with _MACOS_SESSIONS_LOCK:
+        entry = _MACOS_SESSIONS.get(bundle)
+    if entry:
+        return {"bundleId": bundle, "sessionId": entry["sessionId"], "startedAt": entry["startedAt"]}
+    base = _macos_appium_base(root)
+    caps = {"capabilities": {"alwaysMatch": {
+        "platformName": "mac", "appium:automationName": "mac2", "appium:bundleId": bundle,
+        "appium:elementResponseAttributes": "type,label,name"}}}
+    code, body = _appium_request(base, "POST", "/session", caps, timeout=300)
+    value = body.get("value") if isinstance(body, dict) else None
+    session_id = value.get("sessionId") if isinstance(value, dict) else None
+    if code != 200 or not session_id:
+        detail = value.get("message") if isinstance(value, dict) else None
+        raise PlanError((detail or "Appium did not open a mac2 session; is the mac2 driver installed?")[:200])
+    with _MACOS_SESSIONS_LOCK:
+        _MACOS_SESSIONS[bundle] = {"sessionId": session_id, "startedAt": time.time()}
+    _macos_audit(root, "session-open", detail={"bundleId": bundle})
+    return {"bundleId": bundle, "sessionId": session_id}
+
+
+def macos_session_elements(root: str, bundle: str) -> dict:
+    """The deep-inspect element list: stable WebDriver ids with type, label and rect. Rects
+    are screen points and are converted to window points like the AX overlay. Reading stops
+    at 150 elements or a 20-second rect budget, whichever comes first."""
+    _macos_sessions_enforce(root)
+    entry = _macos_sessions_entry(bundle)
+    base = _macos_appium_base(root)
+    session = entry["sessionId"]
+    code, body = _appium_request(base, "POST", f"/session/{session}/elements",
+                                 {"using": "class name", "value": "XCUIElementTypeWindow"}, timeout=30)
+    windows = (body.get("value") or []) if isinstance(body.get("value"), list) else []
+    if code != 200 or not windows or not windows[0].get(_MACOS_ELEMENT_ID_KEY):
+        raise PlanError("The mac2 session does not see a window for that app; it may have quit")
+    window_el = windows[0][_MACOS_ELEMENT_ID_KEY]
+    code, wrect = _appium_request(base, "GET", f"/session/{session}/window/rect", timeout=15)
+    value = wrect.get("value") if isinstance(wrect.get("value"), dict) else {}
+    wx, wy = int(value.get("x") or 0), int(value.get("y") or 0)
+    code, body = _appium_request(base, "POST", f"/session/{session}/element/{window_el}/elements",
+                                 {"using": "xpath", "value": "//*"}, timeout=60)
+    if code != 200:
+        detail = (body.get("value") or {}).get("message") if isinstance(body.get("value"), dict) else None
+        raise PlanError((detail or "The deep-inspect element read failed")[:200])
+    elements, deadline = [], time.time() + 20
+    for raw in (body.get("value") or []):
+        if len(elements) >= 150 or time.time() > deadline:
+            break
+        element_id = raw.get(_MACOS_ELEMENT_ID_KEY)
+        if not element_id or not _ELEMENT_ID.match(str(element_id)):
+            continue
+        try:
+            code2, rect = _appium_request(base, "GET", f"/session/{session}/element/{element_id}/rect",
+                                          timeout=5)
+            r = rect.get("value") if isinstance(rect.get("value"), dict) else {}
+            x, y, w, h = int(r["x"]), int(r["y"]), int(r["width"]), int(r["height"])
+        except (KeyError, TypeError, ValueError, PlanError):
+            continue
+        if w <= 0 or h <= 0:
+            continue
+        elements.append({"elementId": str(element_id), "role": (raw.get("type") or "").replace("XCUIElementType", ""),
+                         "label": (raw.get("label") or "")[:120], "name": (raw.get("name") or "")[:120],
+                         "x": x - wx, "y": y - wy, "w": w, "h": h})
+    return {"bundleId": bundle, "sessionId": session, "window": {"x": wx, "y": wy}, "elements": elements}
+
+
+def macos_session_action(root: str, bundle: str, data: dict) -> dict:
+    """One click or typed text through the open session's element id (armed control mode)."""
+    _macos_sessions_enforce(root)
+    entry = _macos_sessions_entry(bundle)
+    kind = data.get("kind")
+    if kind not in ("click", "type"):
+        raise PlanError("kind must be click or type")
+    element = data.get("elementId")
+    if not isinstance(element, str) or not _ELEMENT_ID.match(element):
+        raise PlanError("Invalid element id")
+    text = ""
+    if kind == "type":
+        text = data.get("text") if isinstance(data.get("text"), str) else ""
+        if not text or len(text) > _INPUT_TEXT_MAX or not all(32 <= ord(c) <= 126 for c in text):
+            raise PlanError(f"The text must be 1-{_INPUT_TEXT_MAX} printable characters; "
+                            "Return is never sent by a type action")
+    base = _macos_appium_base(root)
+    if kind == "click":
+        _appium_request(base, "POST", f"/session/{entry['sessionId']}/element/{element}/click", {}, timeout=30)
+    else:
+        _appium_request(base, "POST", f"/session/{entry['sessionId']}/element/{element}/value",
+                        {"text": text}, timeout=30)
+    _macos_audit(root, "session-" + kind, detail={"bundleId": bundle, "elementId": element,
+                                                  "textLength": len(text)})
+    return {"ok": True, "bundleId": bundle, "elementId": element, "kind": kind}
+
+
+def macos_session_close(root: str, bundle: str) -> dict:
+    """Close one deep-inspect session (panel hide, tab unload, app quit) — never left dangling."""
+    entry = _macos_sessions_entry(bundle, required=False)
+    if entry:
+        with _MACOS_SESSIONS_LOCK:
+            _MACOS_SESSIONS.pop(bundle, None)
+        try:
+            _appium_request(_macos_appium_base(root), "DELETE", f"/session/{entry['sessionId']}", timeout=15)
+        except PlanError:
+            pass
+        _macos_audit(root, "session-close", detail={"bundleId": bundle, "reason": "panel"})
+    return {"closed": bool(entry), "bundleId": bundle}
 
 
 def _validated_ios_device(root: str, device: str) -> dict:
@@ -992,7 +1481,8 @@ def plan(root: str, request: dict, host: dict | None = None) -> dict:
         import source_control
         return source_control.plan(root, request)
     allowed = {"lab", "action", "profile", "cpus", "ram", "disk", "device", "wslDistro", "backup",
-               "clickPid", "clickX", "clickY"}
+               "clickPid", "clickX", "clickY", "inputKind", "inputText", "inputKey",
+               "elementId", "elementKind", "elementSession", "elementBundle"}
     unknown = set(request) - allowed
     if unknown:
         raise PlanError("Unknown request fields: " + ", ".join(sorted(unknown)))
@@ -1027,9 +1517,9 @@ def plan(root: str, request: dict, host: dict | None = None) -> dict:
         if request.get(key) not in (None, "") and action != "resize":
             raise PlanError("Resource parameters are only accepted by resize")
     click = {"pid": request.get("clickPid"), "x": request.get("clickX"), "y": request.get("clickY")}
-    if any(v not in (None, "") for v in click.values()) and action != "macos-click":
-        raise PlanError("Click parameters are only accepted by the app mirror click")
-    if action == "macos-click":
+    if any(v not in (None, "") for v in click.values()) and action not in ("macos-click", "macos-input"):
+        raise PlanError("Click coordinates are only accepted by the app mirror actions")
+    if action in ("macos-click", "macos-input"):
         for name, value in click.items():
             try:
                 if not 0 <= int(value) <= 100000:
@@ -1037,6 +1527,41 @@ def plan(root: str, request: dict, host: dict | None = None) -> dict:
             except (TypeError, ValueError):
                 raise PlanError(f"click{name.capitalize()} must be a screen coordinate") from None
             click[name] = int(value)
+    input_values: dict = {}
+    # inputText is the shared typed-text payload of macos-input and macos-element; the kind and
+    # key fields belong to macos-input alone.
+    if request.get("inputText") not in (None, "") and action not in ("macos-input", "macos-element"):
+        raise PlanError("Input text is only accepted by the app mirror actions")
+    if any(request.get(k) not in (None, "") for k in ("inputKind", "inputKey")) and action != "macos-input":
+        raise PlanError("Input parameters are only accepted by the app mirror input action")
+    if action == "macos-input":
+        input_values = _validated_input({"pid": click["pid"], "x": click["x"], "y": click["y"],
+                                         "kind": request.get("inputKind"),
+                                         "text": request.get("inputText"), "key": request.get("inputKey")})
+    element_values: dict = {}
+    if any(request.get(k) not in (None, "") for k in ("elementId", "elementKind", "elementSession", "elementBundle")) \
+            and action != "macos-element":
+        raise PlanError("Element parameters are only accepted by the deep-inspect element action")
+    if action == "macos-element":
+        if not isinstance(request.get("elementSession"), str) or not _ELEMENT_ID.match(request["elementSession"]):
+            raise PlanError("elementSession must be an open Appium session id")
+        if not isinstance(request.get("elementId"), str) or not _ELEMENT_ID.match(request["elementId"]):
+            raise PlanError("elementId must be a deep-inspect element id")
+        if request.get("elementKind") not in ("click", "type"):
+            raise PlanError("elementKind must be click or type")
+        element_values = {"session": request["elementSession"], "element": request["elementId"],
+                          "kind": request.get("elementKind")}
+        if element_values["kind"] == "type":
+            text = request.get("inputText")
+            if not isinstance(text, str) or not text or len(text) > _INPUT_TEXT_MAX \
+                    or not all(32 <= ord(c) <= 126 for c in text):
+                raise PlanError(f"The text must be 1-{_INPUT_TEXT_MAX} printable characters; "
+                                "Return is never sent by a type action")
+            element_values["text"] = text
+        bundle = request.get("elementBundle")
+        if bundle is not None and (not isinstance(bundle, str) or not _BUNDLE_ID.match(bundle)):
+            raise PlanError("elementBundle must look like com.example.app")
+        element_values["bundle"] = bundle or "the app"
     if request.get("backup"):
         raise PlanError("Restore is not available from the web console; use the lab's scripts/restore.sh")
 
@@ -1056,6 +1581,7 @@ def plan(root: str, request: dict, host: dict | None = None) -> dict:
                 "setup": ("appium.sh", "install"), "appium-install": ("appium.sh", "install"),
                 "appium-start": ("appium.sh", "start"), "appium-stop": ("appium.sh", "stop"),
                 "macos-smoke": ("macos-app.sh", "smoke"), "macos-click": ("macos-app.sh", "click"),
+                "macos-input": ("macos-app.sh", "input"), "macos-element": ("macos-app.sh", "element"),
             }[action]
         else:
             script, extra = {
@@ -1074,6 +1600,30 @@ def plan(root: str, request: dict, host: dict | None = None) -> dict:
             selected = [str(click["pid"]), str(click["x"]), str(click["y"])]
             effects.append(f"Brings the app (pid {click['pid']}) to the front and clicks once at "
                            f"({click['x']}, {click['y']}) on this Mac.")
+        if action == "macos-input":
+            selected = [str(click["pid"]), str(click["x"]), str(click["y"]), input_values["kind"]]
+            if input_values["kind"] == "type":
+                selected.append(input_values["text"])
+                effects.append(f"Brings the app (pid {click['pid']}) to the front and types "
+                               f"{len(input_values['text'])} characters ({input_values['text'][:60]}) — "
+                               "no Return is sent.")
+            elif input_values["kind"] == "key":
+                selected.append(input_values["key"])
+                effects.append(f"Brings the app (pid {click['pid']}) to the front and presses the "
+                               f"{input_values['key']} key.")
+            else:
+                effects.append(f"Brings the app (pid {click['pid']}) to the front and performs a "
+                               f"{input_values['kind']} click at ({click['x']}, {click['y']}) on this Mac.")
+        if action == "macos-element":
+            selected = [element_values["session"], element_values["element"], element_values["kind"]]
+            if element_values["kind"] == "type":
+                selected.append(element_values["text"])
+                effects.append(f"Types {len(element_values['text'])} characters into element "
+                               f"{element_values['element']} through the open mac2 session for "
+                               f"{element_values['bundle']} — no Return is sent.")
+            else:
+                effects.append(f"Clicks element {element_values['element']} through the open mac2 "
+                               f"session for {element_values['bundle']}.")
         path = _scoped(root, "ios-lab", "mac", script)
         if not os.path.isfile(path):
             raise PlanError("Provider script is missing: ios-lab/mac/" + script)

@@ -3,13 +3,14 @@
 # The macOS Lab drives installed applications (Appium mac2); the iOS Simulator lives
 # in the iOS Lab through run-simulator.sh.
 #
-#   macos-app.sh status|doctor|smoke|repl
+#   macos-app.sh status|doctor|smoke|repl|click|input|element
 set -uo pipefail
 
 . "$(dirname "$0")/lib.sh"
 require_macos
 
 ACTION="${1:-status}"
+shift 2>/dev/null || true  # the action word leaves the argument list: click/input/element read $1 onwards
 
 # Appium installed by `appium.sh install` lives in the user's folder, so no administrator
 # rights or global npm directory are needed. A copy already on PATH keeps working.
@@ -77,6 +78,48 @@ case "$ACTION" in
     MEM_GB=$(( $(sysctl -n hw.memsize) / 1024 / 1024 / 1024 ))
     if [ "$MEM_GB" -lt 8 ]; then warn "memory: ${MEM_GB} GB (8 GB+ recommended for mac2 sessions)"; else ok "memory: ${MEM_GB} GB"; fi
     ok "disk free: $(df -h "$LAB_DIR" | awk 'NR==2 {print $4}')"
+
+    say "displays"
+    if command -v python3 >/dev/null 2>&1; then
+      # Origin, size and backing scale per display (MIR-03): CGWindowBounds are points and
+      # pixels are 2x on Retina, so remote coordinates can be reasoned about from this report.
+      python3 - <<'PY' || warn "the display report failed"
+import ctypes
+cg = ctypes.CDLL("/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics")
+class Point(ctypes.Structure):
+    _fields_ = [("x", ctypes.c_double), ("y", ctypes.c_double)]
+class Size(ctypes.Structure):
+    _fields_ = [("width", ctypes.c_double), ("height", ctypes.c_double)]
+class Rect(ctypes.Structure):
+    _fields_ = [("origin", Point), ("size", Size)]
+cg.CGGetActiveDisplayList.restype = ctypes.c_int32
+cg.CGGetActiveDisplayList.argtypes = [ctypes.c_uint32, ctypes.POINTER(ctypes.c_uint32), ctypes.POINTER(ctypes.c_uint32)]
+cg.CGDisplayBounds.restype = Rect
+cg.CGDisplayBounds.argtypes = [ctypes.c_uint32]
+cg.CGDisplayCopyDisplayMode.restype = ctypes.c_void_p
+cg.CGDisplayCopyDisplayMode.argtypes = [ctypes.c_uint32]
+for name in ("CGDisplayModeGetWidth", "CGDisplayModeGetHeight", "CGDisplayModeGetPixelWidth", "CGDisplayModeGetPixelHeight"):
+    fn = getattr(cg, name)
+    fn.restype = ctypes.c_size_t
+    fn.argtypes = [ctypes.c_void_p]
+count = ctypes.c_uint32()
+ids = (ctypes.c_uint32 * 16)()
+if cg.CGGetActiveDisplayList(16, ids, ctypes.byref(count)) != 0:
+    raise SystemExit(1)
+for i in range(count.value):
+    did = ids[i]
+    r = cg.CGDisplayBounds(did)
+    mode = cg.CGDisplayCopyDisplayMode(did)
+    scale = 1.0
+    if mode:
+        points, pixels = cg.CGDisplayModeGetWidth(mode), cg.CGDisplayModeGetPixelWidth(mode)
+        scale = round(pixels / points, 2) if points else 1.0
+    print("  display %d: origin (%d, %d) size %dx%d scale %sx" % (
+        i + 1, r.origin.x, r.origin.y, r.size.width, r.size.height, scale))
+PY
+    else
+      warn "python3 not found; skipping the display report"
+    fi
 
     say "appium"
     if command -v node >/dev/null 2>&1; then ok "node: $(node --version)"; else warn "node not found (brew install node)"; fi
@@ -163,7 +206,108 @@ case "$ACTION" in
       }
     ' "$X" "$Y" || die "the click could not be posted; grant Accessibility permission to the console"
     ;;
+  input)
+    # The mirror's action family (MIR-01): double-click, right-click, type and press-key,
+    # with the same preview → confirm (or armed) pipeline as the single click. Fixed argv:
+    # pid, x, y, kind, payload. `type` never sends Return — newlines are refused here and
+    # by the console; Enter is its own explicit `key enter` action. Needs Accessibility.
+    PID="${1:-}"; X="${2:-}"; Y="${3:-}"; KIND="${4:-}"; PAYLOAD="${5:-}"
+    case "$PID$X$Y" in ''|*[!0-9]*) die "usage: $0 input <pid> <x> <y> <double|right|type|key> [payload]" ;; esac
+    osascript -e "tell application \"System Events\" to set frontmost of (first application process whose unix id is $PID) to true" >/dev/null 2>&1 \
+      || warn "could not bring pid $PID forward; the action may land elsewhere"
+    sleep 0.4
+    case "$KIND" in
+      double|right)
+        osascript -l JavaScript -e '
+          ObjC.import("CoreGraphics");
+          function run(argv) {
+            const p = $.CGPointMake(parseFloat(argv[0]), parseFloat(argv[1]));
+            const right = argv[2] === "right";
+            const button = right ? $.kCGMouseButtonRight : $.kCGMouseButtonLeft;
+            const press = (type, state) => {
+              const e = $.CGEventCreateMouseEvent($(), type, p, button);
+              $.CGEventSetIntegerValueField(e, $.kCGMouseEventClickState, state);
+              $.CGEventPost($.kCGHIDEventTap, e);
+            };
+            $.CGEventPost($.kCGHIDEventTap, $.CGEventCreateMouseEvent($(), $.kCGEventMouseMoved, p, button));
+            if (right) {
+              press($.kCGEventRightMouseDown, 1); press($.kCGEventRightMouseUp, 1);
+              return "right-clicked " + argv[0] + "," + argv[1];
+            }
+            press($.kCGEventLeftMouseDown, 1); press($.kCGEventLeftMouseUp, 1);
+            press($.kCGEventLeftMouseDown, 2); press($.kCGEventLeftMouseUp, 2);
+            return "double-clicked " + argv[0] + "," + argv[1];
+          }
+        ' "$X" "$Y" "$KIND" || die "the action could not be posted; grant Accessibility permission to the console"
+        ;;
+      type)
+        # Printable ASCII only; the console caps the length and refuses newlines, so a typed
+        # text can never submit a form on its own.
+        case "$PAYLOAD" in
+          ''|*[![:print:]]*) die "the text may only contain printable characters (no Return)" ;;
+        esac
+        [ "${#PAYLOAD}" -le 200 ] || die "the text is longer than 200 characters"
+        ESCAPED="$(printf '%s' "$PAYLOAD" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g')"
+        osascript -e "tell application \"System Events\" to keystroke \"$ESCAPED\"" \
+          || die "the text could not be typed; grant Accessibility permission to the console"
+        say "typed ${#PAYLOAD} characters (no Return)"
+        ;;
+      key)
+        case "$PAYLOAD" in
+          tab|escape|delete|forward-delete|up|down|left|right|space|enter) ;;
+          *) die "key must be one of: tab, escape, delete, forward-delete, up, down, left, right, space, enter" ;;
+        esac
+        osascript -l JavaScript -e '
+          ObjC.import("CoreGraphics");
+          function run(argv) {
+            const codes = { tab: 48, escape: 53, delete: 51, "forward-delete": 117,
+                            up: 126, down: 125, left: 123, right: 124, space: 49, enter: 36 };
+            const code = codes[argv[0]];
+            $.CGEventPost($.kCGHIDEventTap, $.CGEventCreateKeyboardEvent($(), code, true));
+            $.CGEventPost($.kCGHIDEventTap, $.CGEventCreateKeyboardEvent($(), code, false));
+            return "pressed " + argv[0];
+          }
+        ' "$PAYLOAD" || die "the key could not be posted; grant Accessibility permission to the console"
+        ;;
+      *)
+        die "input kind must be one of: double, right, type, key"
+        ;;
+    esac
+    ;;
+  element)
+    # One WebDriver action on an existing mac2 session's element (MIR-05 deep inspect). The
+    # session is opened and closed by the console (armed control mode); this never creates
+    # or closes one, so a previewed job can also run it by session id. kind is click or type.
+    SESSION="${1:-}"; ELEMENT="${2:-}"; KIND="${3:-}"; PAYLOAD="${4:-}"
+    case "$SESSION" in ''|*[!A-Za-z0-9._-]*) die "invalid Appium session id" ;; esac
+    case "$ELEMENT" in ''|*[!A-Za-z0-9._-]*) die "invalid element id" ;; esac
+    curl -fsS --max-time 2 "http://${APPIUM_HOST}:${APPIUM_PORT}/status" >/dev/null 2>&1 \
+      || die "Appium is not running on ${APPIUM_HOST}:${APPIUM_PORT}"
+    case "$KIND" in
+      click)
+        curl -fsS --max-time 30 -X POST "http://${APPIUM_HOST}:${APPIUM_PORT}/session/$SESSION/element/$ELEMENT/click" \
+          -H "Content-Type: application/json" -d '{}' >/dev/null \
+          || die "the element click failed; the session may have expired (re-arm deep inspect)"
+        say "clicked element $ELEMENT through the mac2 session"
+        ;;
+      type)
+        case "$PAYLOAD" in
+          ''|*[![:print:]]*) die "the text may only contain printable characters (no Return)" ;;
+        esac
+        [ "${#PAYLOAD}" -le 200 ] || die "the text is longer than 200 characters"
+        TEXT="$(python3 -c 'import json, sys; print(json.dumps(sys.argv[1]))' "$PAYLOAD")" \
+          || die "the text could not be encoded"
+        curl -fsS --max-time 30 -X POST "http://${APPIUM_HOST}:${APPIUM_PORT}/session/$SESSION/element/$ELEMENT/value" \
+          -H "Content-Type: application/json" -d "{\"text\": $TEXT}" >/dev/null \
+          || die "the element typing failed; the session may have expired (re-arm deep inspect)"
+        say "typed ${#PAYLOAD} characters into element $ELEMENT (no Return)"
+        ;;
+      *)
+        die "element kind must be click or type"
+        ;;
+    esac
+    ;;
   *)
-    die "usage: $0 status|doctor|smoke|repl|click"
+    die "usage: $0 status|doctor|smoke|repl|click|input|element"
     ;;
 esac
