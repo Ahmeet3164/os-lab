@@ -8,7 +8,7 @@
 import { useEffect, useReducer } from "react";
 import type { CapabilityCatalog } from "../health/capabilities";
 
-export type LabId = "android" | "windows" | "linux" | "ios" | "macos" | "source";
+export type LabId = "android" | "windows" | "linux" | "ios" | "macos" | "source" | "web";
 export type LabState = "ready" | "needs-setup" | "unavailable";
 
 export interface HostTool {
@@ -208,6 +208,32 @@ export interface CleanupCrossLeftovers {
   inventorySources?: string[]; inventoryErrors?: string[]; unreadable?: string[];
 }
 
+// Web Lab (console/web_api.py → web-lab/browser engine)
+export interface WebEngineHealth {
+  ok: boolean; engine: string; version: string; port: number; windows: number; eventCount: number;
+}
+export interface WebWindowState {
+  id: number; url: string; profile: string; user_agent: string | null; viewport: string; created_at: number;
+}
+export interface WebInjection {
+  id: string; name: string; code: string; enabled: boolean;
+}
+export interface WebProfile {
+  id: string; name: string; ephemeral: boolean;
+}
+export interface WebEvent {
+  seq: number; ts: number; window_id: number | null; kind: string; payload: unknown;
+}
+export interface WebStatus {
+  state: "ready" | "stopped" | "needs-setup" | "unavailable";
+  port: number; binary: boolean; engine: WebEngineHealth | null;
+}
+export interface WebOverview {
+  ok: boolean; version: string; port: number; startedAt: number;
+  windows: WebWindowState[]; injections: WebInjection[]; profiles: WebProfile[];
+  eventCount: number; lastEventSeq: number;
+}
+
 export class ApiError extends Error {
   constructor(
     message: string,
@@ -309,6 +335,22 @@ export const api = {
   appUpdateStatus: () => call<AppUpdateState>("/api/app/update"),
   appUpdateCheck: () => post<AppUpdateState>("/api/app/update/check"),
   appUpdateInstall: () => post<AppUpdateState>("/api/app/update/install"),
+  // Web Lab (console/web_api.py proxies the local engine; engine/start and engine/stop stay console-side)
+  webStatus: () => call<WebStatus>("/api/web/status"),
+  webOverview: () => call<WebOverview>("/api/web/overview"),
+  webEngineStart: () => post<{ state: string; alreadyRunning?: boolean; pid?: number }>("/api/web/engine/start"),
+  webEngineStop: () => post<{ stopped: boolean }>("/api/web/engine/stop"),
+  webOpenWindow: (request: { url: string; profile?: string; user_agent?: string | null; viewport?: string }) =>
+    post<{ ok: boolean; windowId: number }>("/api/web/windows", request),
+  webCloseWindow: (id: number) => call<{ ok: boolean; closed: boolean }>(`/api/web/windows/${id}`, { method: "DELETE", headers: { "X-OSLab": "1" } }),
+  webNavigate: (id: number, url: string) => post<{ ok: boolean }>(`/api/web/windows/${id}/navigate`, { url }),
+  webReload: (id: number) => post<{ ok: boolean }>(`/api/web/windows/${id}/reload`),
+  webEval: (id: number, code: string) => post<{ ok: boolean; applied: boolean }>(`/api/web/windows/${id}/eval`, { code }),
+  webCookies: (id: number) => post<{ ok: boolean }>(`/api/web/windows/${id}/cookies`),
+  webStorage: (id: number) => post<{ ok: boolean }>(`/api/web/windows/${id}/storage`),
+  webEvents: (since: number) => call<{ events: WebEvent[]; lastSeq: number; count: number }>(`/api/web/events?since=${since}`),
+  webAddInjection: (name: string, code: string) => post<{ ok: boolean; injection: WebInjection }>("/api/web/injections", { name, code }),
+  webDeleteInjection: (id: string) => call<{ ok: boolean; removed: boolean }>(`/api/web/injections/${encodeURIComponent(id)}`, { method: "DELETE", headers: { "X-OSLab": "1" } }),
   upload: async (file: File) => {
     const form = new FormData();
     form.append("apk", file);
