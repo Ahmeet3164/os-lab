@@ -657,6 +657,49 @@ def run_policy(policy: dict[str, Any], target_path: str | Path = CANONICAL_TARGE
     }
 
 
+def _has_trusted_tool(name: str) -> bool:
+    """Return True if `name` resolves outside the repo and current working directory."""
+    resolved = shutil.which(name)
+    if not resolved:
+        return False
+    folder = os.path.normcase(os.path.dirname(os.path.abspath(resolved)))
+    untrusted = {
+        os.path.normcase(os.path.abspath(d))
+        for d in (os.getcwd(), str(REPO_ROOT), str(LAB_ROOT))
+    }
+    return folder not in untrusted
+
+
+def _compile_harness(resolved_target: Path, binary_path: Path) -> None:
+    """Compile the scope-verified `hedef.c` harness with a static compiler argv."""
+    flags = ("-O0", "-g", "-fno-inline", str(resolved_target), "-o", str(binary_path))
+    if _has_trusted_tool("gcc"):
+        # Audited: static compiler literal, shell=False, and scope-verified CANONICAL_TARGET only.
+        subprocess.run(  # nosec B603,B607  # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit, python.lang.security.audit.dangerous-subprocess-use
+            ["gcc", *flags],
+            check=True,
+            capture_output=True,
+            text=True,
+            shell=False,
+            stdin=subprocess.DEVNULL,
+            timeout=30,
+        )
+        return
+    if _has_trusted_tool("clang"):
+        # Audited: static compiler literal, shell=False, and scope-verified CANONICAL_TARGET only.
+        subprocess.run(  # nosec B603,B607  # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit, python.lang.security.audit.dangerous-subprocess-use
+            ["clang", *flags],
+            check=True,
+            capture_output=True,
+            text=True,
+            shell=False,
+            stdin=subprocess.DEVNULL,
+            timeout=30,
+        )
+        return
+    raise RuntimeError("No C compiler (gcc/clang) found on PATH for live Frida mode.")
+
+
 def run_live_frida(policy: dict[str, Any], target_path: str | Path = CANONICAL_TARGET) -> dict[str, Any]:
     """Compile `hedef.c` into a temporary directory and attach `tamper_policy.js` via Frida."""
     validate_policy(policy)
@@ -664,8 +707,7 @@ def run_live_frida(policy: dict[str, Any], target_path: str | Path = CANONICAL_T
     if not HOOK_SCRIPT_PATH.is_file():
         raise FileNotFoundError(f"Hook script missing: {HOOK_SCRIPT_PATH}")
 
-    compiler = shutil.which("gcc") or shutil.which("clang")
-    if not compiler:
+    if not (_has_trusted_tool("gcc") or _has_trusted_tool("clang")):
         raise RuntimeError("No C compiler (gcc/clang) found on PATH for live Frida mode.")
 
     try:
@@ -679,8 +721,7 @@ def run_live_frida(policy: dict[str, Any], target_path: str | Path = CANONICAL_T
     with tempfile.TemporaryDirectory(prefix="pent07-live-") as tmp_dir:
         exe_name = "hedef.exe" if os.name == "nt" else "hedef"
         binary_path = Path(tmp_dir) / exe_name
-        compile_cmd = [compiler, "-O0", "-g", "-fno-inline", str(resolved_target), "-o", str(binary_path)]
-        subprocess.run(compile_cmd, check=True, capture_output=True, text=True)
+        _compile_harness(resolved_target, binary_path)
 
         argv = [
             str(binary_path),

@@ -1,7 +1,7 @@
 /** Card and form primitives, ported from qLar's settings/ui.tsx. */
-import type { ReactNode } from "react";
-import { CheckCircleIcon, CopyIcon, CheckIcon, WarningCircleIcon } from "@phosphor-icons/react";
-import { useState } from "react";
+import type { KeyboardEvent, ReactNode } from "react";
+import { CheckCircleIcon, CopyIcon, CheckIcon, WarningCircleIcon, XIcon } from "@phosphor-icons/react";
+import { useEffect, useRef, useState } from "react";
 
 /** A settings card: title, optional description and action, then its body. */
 export function Section({
@@ -10,6 +10,7 @@ export function Section({
   title,
   description,
   action,
+  className,
   children
 }: {
   id?: string;
@@ -17,10 +18,11 @@ export function Section({
   title: string;
   description?: ReactNode;
   action?: ReactNode;
+  className?: string;
   children: ReactNode;
 }) {
   return (
-    <section id={id} className="iux-card gap-4 py-5">
+    <section id={id} className={"iux-card gap-4 py-5" + (className ? ` ${className}` : "")}>
       <div className="flex flex-wrap items-start gap-3 px-5">
         <div className="min-w-0 flex-1">
           <h2 className="flex items-center gap-2 text-sm leading-none font-semibold">
@@ -104,21 +106,115 @@ export function PageHead({ icon, title, description, actions }: { icon: ReactNod
 }
 
 export function CopyButton({ text, label = "Copy" }: { text: string; label?: string }) {
-  const [done, setDone] = useState(false);
+  const [state, setState] = useState<"idle" | "copying" | "copied" | "failed">("idle");
+  return (
+    <span className="relative inline-flex shrink-0">
+      <button
+        type="button"
+        data-size="icon"
+        disabled={state === "copying"}
+        aria-label={label}
+        title={label}
+        className="iux-touch-target flex size-7 items-center justify-center rounded-md border border-(--iux-border)/80 text-(--iux-muted-foreground) transition-colors hover:bg-(--iux-muted) hover:text-(--iux-foreground)"
+        onClick={async () => {
+          setState("copying");
+          try {
+            await navigator.clipboard.writeText(text);
+            setState("copied");
+            setTimeout(() => setState(current => current === "copied" ? "idle" : current), 2000);
+          } catch {
+            setState("failed");
+          }
+        }}
+      >
+        {state === "copied" ? <CheckIcon size={14} className="text-[#00d084]" weight="bold" /> : <CopyIcon size={14} />}
+      </button>
+      {state === "copied" || state === "failed" ? <span role="status" className="absolute right-0 top-full z-10 mt-1 w-48 rounded-md border border-(--iux-border) bg-(--iux-card) p-2 text-xs text-(--iux-foreground) shadow-lg">{state === "copied" ? "Copied" : "Clipboard unavailable. Select the text manually."}</span> : null}
+    </span>
+  );
+}
+
+/** Keep Tab cycling inside an open <dialog>; shared by every modal view (also re-exported from views/modal-focus). */
+export function keepModalFocus(event: KeyboardEvent<HTMLDialogElement>) {
+  if (event.key !== "Tab") return;
+  const dialog = event.currentTarget;
+  const controls = Array.from(dialog.querySelectorAll<HTMLElement>("a[href], button:not([disabled]), [tabindex]:not([tabindex='-1'])"))
+    .filter((control) => control.getClientRects().length > 0);
+  const first = controls[0];
+  const last = controls.at(-1);
+  if (!first || !last) {
+    event.preventDefault();
+    dialog.focus();
+  } else if (event.shiftKey && (document.activeElement === first || document.activeElement === dialog)) {
+    event.preventDefault();
+    last.focus();
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault();
+    first.focus();
+  }
+}
+
+/** A small square icon button with a tooltip: toggles panels and modals like Advanced settings. */
+export function IconButton({ label, onClick, className, children }: { label: string; onClick: () => void; className?: string; children: ReactNode }) {
   return (
     <button
       type="button"
       aria-label={label}
       title={label}
-      className="flex size-7 shrink-0 items-center justify-center rounded-md border border-(--iux-border)/80 text-(--iux-muted-foreground) transition-colors hover:bg-(--iux-muted) hover:text-(--iux-foreground)"
-      onClick={() => {
-        void navigator.clipboard?.writeText(text).catch(() => {});
-        setDone(true);
-        setTimeout(() => setDone(false), 1500);
+      onClick={onClick}
+      className={
+        "iux-touch-target flex size-7 items-center justify-center rounded-md border border-(--iux-border)/80 text-(--iux-muted-foreground) transition-colors hover:bg-(--iux-muted) hover:text-(--iux-foreground)" +
+        (className ? ` ${className}` : "")
+      }
+    >
+      {children}
+    </button>
+  );
+}
+
+/**
+ * A modal dialog for content that opens on demand instead of living on the page: native <dialog>
+ * with a focus trap, Escape and backdrop close, scroll lock and a round close button.
+ */
+export function Modal({ title, icon, description, onClose, children }: { title: string; icon?: ReactNode; description?: ReactNode; onClose: () => void; children: ReactNode }) {
+  const box = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    const previous = document.activeElement as HTMLElement | null;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    box.current?.showModal();
+    box.current?.focus();
+    return () => {
+      if (box.current?.open) box.current.close();
+      document.body.style.overflow = previousOverflow;
+      previous?.focus();
+    };
+  }, []);
+  return (
+    <dialog
+      className="iux-modal"
+      aria-labelledby="iux-modal-title"
+      ref={box}
+      tabIndex={-1}
+      onClose={onClose}
+      onKeyDown={keepModalFocus}
+      onMouseDown={(e) => {
+        const rect = e.currentTarget.getBoundingClientRect();
+        if (e.clientX < rect.left || e.clientX > rect.right || e.clientY < rect.top || e.clientY > rect.bottom) { e.preventDefault(); onClose(); }
       }}
     >
-      {done ? <CheckIcon size={14} className="text-[#00d084]" weight="bold" /> : <CopyIcon size={14} />}
-    </button>
+      <button type="button" className="iux-modal-x" onClick={onClose} aria-label="Close" title="Close">
+        <XIcon size={16} weight="bold" />
+      </button>
+      <header className="iux-modal-head">
+        <h2 id="iux-modal-title">
+          {icon ? <span className="text-[#f36c21]">{icon}</span> : null}
+          {title}
+        </h2>
+        {description ? <p>{description}</p> : null}
+      </header>
+      {children}
+    </dialog>
   );
 }
 
