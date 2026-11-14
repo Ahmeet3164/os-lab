@@ -198,7 +198,7 @@ class LabHttpHandler(BaseHTTPRequestHandler):
             try:
                 self._lab_get(path)
             except oslab.PlanError as e:
-                self._json(400, {"error": str(e)})
+                self._json(400, {"error": str(e), "code": getattr(e, "code", None), "retry": getattr(e, "retry", None)})
             return
         if path in ("/classic", "/classic/"):
             self._send_bytes(200, read_web_file("index.html"), "text/html; charset=utf-8")
@@ -377,6 +377,12 @@ class LabHttpHandler(BaseHTTPRequestHandler):
             self._json(200, oslab.macos_window_elements(REPO_ROOT, parts[4], revision))
         elif len(parts) == 6 and parts[:4] == ["api", "labs", "macos", "apps"] and parts[5] == "stream":
             self._macos_stream(parts[4])
+        elif len(parts) == 6 and parts[:4] == ["api", "labs", "macos", "apps"] and parts[5] == "windows":
+            self._json(200, oslab.macos_ax_windows(REPO_ROOT, {"pid": parts[4]}))
+        elif len(parts) == 6 and parts[:4] == ["api", "labs", "macos", "apps"] and parts[5] == "menubar":
+            self._json(200, oslab.macos_ax_menubar(REPO_ROOT, {"pid": parts[4]}))
+        elif len(parts) == 6 and parts[:4] == ["api", "labs", "macos", "apps"] and parts[5] == "focused":
+            self._json(200, oslab.macos_ax_focused(REPO_ROOT, {"pid": parts[4]}))
         elif len(parts) == 6 and parts[:4] == ["api", "labs", "macos", "session"] and parts[5] == "elements":
             self._json(200, oslab.macos_session_elements(REPO_ROOT, parts[4]))
         elif path == "/api/jobs":
@@ -418,7 +424,7 @@ class LabHttpHandler(BaseHTTPRequestHandler):
             try:
                 self._lab_post(path)
             except (oslab.PlanError, ValueError) as e:
-                self._json(400, {"error": str(e)})
+                self._json(400, {"error": str(e), "code": getattr(e, "code", None), "retry": getattr(e, "retry", None)})
             return
         self._android_post()
 
@@ -509,8 +515,9 @@ class LabHttpHandler(BaseHTTPRequestHandler):
         self.send_header("X-Content-Type-Options", "nosniff")
         self.end_headers()
         deadline = time.time() + 600
+        epoch = oslab._MACOS_STREAM_EPOCH
         try:
-            for frame in oslab.macos_window_stream(wid, fps):
+            for frame in oslab.macos_window_stream(wid, fps, epoch):
                 self.wfile.write(b"--frame\r\nContent-Type: image/png\r\nContent-Length: "
                                  + str(len(frame)).encode() + b"\r\n\r\n" + frame + b"\r\n")
                 self.wfile.flush()
@@ -523,13 +530,26 @@ class LabHttpHandler(BaseHTTPRequestHandler):
         parts = [p for p in path.split("/") if p]
         if path == "/api/labs/macos/control":
             data = self._read_json()
-            self._json(200, oslab.macos_control_arm(REPO_ROOT, data.get("armed") is True))
+            owner = data.get("owner") if isinstance(data.get("owner"), str) and len(data.get("owner")) <= 64 else None
+            self._json(200, oslab.macos_control_arm(REPO_ROOT, data.get("armed") is True, owner))
         elif path == "/api/labs/macos/click":
             # Armed control mode only: a previewed click goes through /api/labs/plan + /api/labs/start.
             self._json(200, oslab.macos_control_click(REPO_ROOT, self._read_json()))
         elif path == "/api/labs/macos/input":
-            # Armed control mode only: the mirror's double/right/type/key family (MIR-01).
+            # Armed control mode only: the mirror's double/right/type/key/paste family (MIR-01).
             self._json(200, oslab.macos_control_input(REPO_ROOT, self._read_json()))
+        elif path == "/api/labs/macos/element/set":
+            # Armed control mode only: one AX value write through the native helper (MIR-07).
+            self._json(200, oslab.macos_ax_set(REPO_ROOT, self._read_json()))
+        elif path == "/api/labs/macos/element/perform":
+            # Armed control mode only: one advertised AX action (MIR-07).
+            self._json(200, oslab.macos_ax_perform(REPO_ROOT, self._read_json()))
+        elif path == "/api/labs/macos/element/read":
+            # Read-only: one attribute of one element by path (MIR-08).
+            self._json(200, oslab.macos_ax_read(REPO_ROOT, self._read_json()))
+        elif path == "/api/labs/macos/stop":
+            # The panic stop (MIR-11): disarm, close sessions, end streams — always safe.
+            self._json(200, oslab.macos_panic_stop(REPO_ROOT))
         elif path == "/api/labs/macos/session":
             # Open one deep-inspect mac2 session (MIR-05); armed control mode only.
             self._json(200, oslab.macos_session_open(REPO_ROOT, self._read_json()))

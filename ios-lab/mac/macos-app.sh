@@ -3,7 +3,7 @@
 # The macOS Lab drives installed applications (Appium mac2); the iOS Simulator lives
 # in the iOS Lab through run-simulator.sh.
 #
-#   macos-app.sh status|doctor|smoke|repl|click|input|element
+#   macos-app.sh status|doctor|smoke|repl|click|input|element|build-ax-helper
 set -uo pipefail
 
 . "$(dirname "$0")/lib.sh"
@@ -16,8 +16,20 @@ shift 2>/dev/null || true  # the action word leaves the argument list: click/inp
 # rights or global npm directory are needed. A copy already on PATH keeps working.
 APPIUM_PREFIX="${OSLAB_APPIUM_HOME:-$HOME/.oslab/appium}"
 MANAGED_BIN="$APPIUM_PREFIX/node_modules/.bin/appium"
+AX_HELPER_SRC="$MAC_DIR/ax-helper.swift"
+AX_HELPER_BIN="$MAC_DIR/build/ax-helper"
 appium_bin() {
   if [ -x "$MANAGED_BIN" ]; then echo "$MANAGED_BIN"; else command -v appium 2>/dev/null || true; fi
+}
+ax_helper_state() {
+  # The native AX reader (MIR-09): full attribute trees in milliseconds.
+  if [ -x "$AX_HELPER_BIN" ]; then
+    ok "native AX helper: built ($AX_HELPER_BIN)"
+  elif command -v swiftc >/dev/null 2>&1; then
+    warn "native AX helper: not built (Build AX helper in the macOS Lab page); element reads use the slower osascript path"
+  else
+    warn "native AX helper: unavailable (no swiftc; install the Xcode command line tools); element reads use the slower osascript path"
+  fi
 }
 
 ok()   { printf '  [ok]   %s\n' "$*"; }
@@ -131,6 +143,9 @@ PY
     mac2_driver_state
     appium_state
 
+    say "advanced element reads"
+    ax_helper_state
+
     say "permissions"
     AX_PROBE="$(osascript -e 'tell application "System Events" to get position of window 1 of (first application process whose frontmost is true)' 2>&1 || true)"
     if [ -n "$AX_PROBE" ] && [ "${AX_PROBE#*assistive}" = "$AX_PROBE" ]; then
@@ -212,7 +227,7 @@ PY
     # pid, x, y, kind, payload. `type` never sends Return — newlines are refused here and
     # by the console; Enter is its own explicit `key enter` action. Needs Accessibility.
     PID="${1:-}"; X="${2:-}"; Y="${3:-}"; KIND="${4:-}"; PAYLOAD="${5:-}"
-    case "$PID$X$Y" in ''|*[!0-9]*) die "usage: $0 input <pid> <x> <y> <double|right|type|key> [payload]" ;; esac
+    case "$PID$X$Y" in ''|*[!0-9]*) die "usage: $0 input <pid> <x> <y> <double|right|type|key|paste> [payload]" ;; esac
     osascript -e "tell application \"System Events\" to set frontmost of (first application process whose unix id is $PID) to true" >/dev/null 2>&1 \
       || warn "could not bring pid $PID forward; the action may land elsewhere"
     sleep 0.4
@@ -254,14 +269,14 @@ PY
         ;;
       key)
         case "$PAYLOAD" in
-          tab|escape|delete|forward-delete|up|down|left|right|space|enter) ;;
+          tab|escape|delete|forward-delete|up|down|left|right|space|enter|return) ;;
           *) die "key must be one of: tab, escape, delete, forward-delete, up, down, left, right, space, enter" ;;
         esac
         osascript -l JavaScript -e '
           ObjC.import("CoreGraphics");
           function run(argv) {
             const codes = { tab: 48, escape: 53, delete: 51, "forward-delete": 117,
-                            up: 126, down: 125, left: 123, right: 124, space: 49, enter: 36 };
+                            up: 126, down: 125, left: 123, right: 124, space: 49, enter: 36, return: 36 };
             const code = codes[argv[0]];
             $.CGEventPost($.kCGHIDEventTap, $.CGEventCreateKeyboardEvent($(), code, true));
             $.CGEventPost($.kCGHIDEventTap, $.CGEventCreateKeyboardEvent($(), code, false));
@@ -269,10 +284,49 @@ PY
           }
         ' "$PAYLOAD" || die "the key could not be posted; grant Accessibility permission to the console"
         ;;
+      paste)
+        # MIR-07: clipboard paste — the one input that may carry newlines, gated behind an
+        # explicit confirm even while armed (MIR-11). The clipboard is replaced, honestly.
+        [ -n "$PAYLOAD" ] || die "a paste needs text"
+        [ "${#PAYLOAD}" -le 2000 ] || die "the text is longer than 2000 characters"
+        printf '%s' "$PAYLOAD" | pbcopy || die "the clipboard could not be written"
+        osascript -e 'tell application "System Events" to keystroke "v" using command down' \
+          || die "the paste could not be posted; grant Accessibility permission to the console"
+        say "pasted ${#PAYLOAD} characters (the clipboard was replaced)"
+        ;;
       *)
-        die "input kind must be one of: double, right, type, key"
+        die "input kind must be one of: double, right, type, key, paste"
         ;;
     esac
+    ;;
+  axset)
+    # One AX value write through the native AX helper (MIR-07): fixed argv pid, AX window
+    # index ("-" for none), path, identity, value. The helper fails closed when the tree
+    # moved (STALE_PATH) instead of acting on the wrong node.
+    PID="${1:-}"; WIN="${2:-}"; PATH_ARG="${3:-}"; IDENTITY="${4:-}"; VALUE="${5:-}"
+    [ -x "$AX_HELPER_BIN" ] || die "the native AX helper is not built; use Build AX helper in the macOS Lab page"
+    case "$PID" in ''|*[!0-9]*) die "usage: $0 axset <pid> <window|-> <path> <identity> <value>" ;; esac
+    case "$WIN" in -|*[!0-9]*) [ "$WIN" = "-" ] || die "window must be an index or -" ;; esac
+    case "$PATH_ARG" in ''|*[!0-9.]*) die "path must be a child-index chain like 0.3.1" ;; esac
+    case "$IDENTITY" in *[!0-9a-f]*) die "identity must be the hex hash from the tree read" ;; esac
+    [ -n "$VALUE" ] || die "a value is required"
+    ARGS=(set --pid "$PID" --path "$PATH_ARG" --identity "$IDENTITY" --value "$VALUE")
+    [ "$WIN" = "-" ] || ARGS+=(--window "$WIN")
+    exec "$AX_HELPER_BIN" "${ARGS[@]}"
+    ;;
+  axperform)
+    # One advertised AX action through the native AX helper (MIR-07): the helper refuses
+    # actions the element does not advertise, so nothing is guessed.
+    PID="${1:-}"; WIN="${2:-}"; PATH_ARG="${3:-}"; IDENTITY="${4:-}"; AX_ACTION="${5:-}"
+    [ -x "$AX_HELPER_BIN" ] || die "the native AX helper is not built; use Build AX helper in the macOS Lab page"
+    case "$PID" in ''|*[!0-9]*) die "usage: $0 axperform <pid> <window|-> <path> <identity> <action>" ;; esac
+    case "$WIN" in -|*[!0-9]*) [ "$WIN" = "-" ] || die "window must be an index or -" ;; esac
+    case "$PATH_ARG" in ''|*[!0-9.]*) die "path must be a child-index chain like 0.3.1" ;; esac
+    case "$IDENTITY" in *[!0-9a-f]*) die "identity must be the hex hash from the tree read" ;; esac
+    case "$AX_ACTION" in AX*) ;; *) die "action must be an advertised AX action (e.g. AXPress)" ;; esac
+    ARGS=(perform --pid "$PID" --path "$PATH_ARG" --identity "$IDENTITY" --action "$AX_ACTION")
+    [ "$WIN" = "-" ] || ARGS+=(--window "$WIN")
+    exec "$AX_HELPER_BIN" "${ARGS[@]}"
     ;;
   element)
     # One WebDriver action on an existing mac2 session's element (MIR-05 deep inspect). The
@@ -307,7 +361,21 @@ PY
         ;;
     esac
     ;;
+  build-ax-helper)
+    # Compile the native AX reader (MIR-09). Needs only the Xcode command line tools;
+    # the binary lands in ios-lab/mac/build/ and the console picks it up on the next read.
+    command -v swiftc >/dev/null 2>&1 || die "swiftc is not available; install the Xcode command line tools (xcode-select --install)"
+    mkdir -p "$MAC_DIR/build"
+    say "Compiling the native AX helper"
+    swiftc -O "$AX_HELPER_SRC" -o "$AX_HELPER_BIN" || die "the AX helper did not compile; see the swiftc output above"
+    FPID="$(pgrep -x Finder | head -1)"
+    if [ -n "$FPID" ] && "$AX_HELPER_BIN" windows --pid "$FPID" >/dev/null 2>&1; then
+      say "AX helper ready: $AX_HELPER_BIN"
+    else
+      warn "the helper built but its probe failed; grant Accessibility permission to the console for element reads"
+    fi
+    ;;
   *)
-    die "usage: $0 status|doctor|smoke|repl|click|input|element"
+    die "usage: $0 status|doctor|smoke|repl|click|input|element|axset|axperform|build-ax-helper"
     ;;
 esac

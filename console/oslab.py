@@ -126,7 +126,7 @@ MAC_ACTIONS = ["status", "doctor", "setup", "start", "stop", "appium-install", "
 # The macOS Lab automates installed macOS applications through Appium mac2 — no simulator.
 # macos-click, macos-input and macos-element drive the app mirror panel (never plain buttons).
 MACOS_APP_ACTIONS = ["status", "doctor", "setup", "appium-install", "appium-start", "appium-stop", "macos-smoke",
-                     "macos-click", "macos-input", "macos-element"]
+                     "macos-click", "macos-input", "macos-element", "macos-set-value", "macos-perform"]
 
 ACTION_INFO = {
     "csv-merge": ("Join catalogs", "Join operator catalogs into private storage."),
@@ -159,6 +159,8 @@ ACTION_INFO = {
     "macos-click": ("Click in app", "Bring the mirrored app to the front and click once at the chosen point."),
     "macos-input": ("Mirror input action", "Run the previewed double-click, right-click, typed text or key press from the app mirror. Typed text never sends Return."),
     "macos-element": ("Deep-inspect element action", "Click or type into one element through the open mac2 deep-inspect session for the mirrored app."),
+    "macos-set-value": ("Set element value", "Write a value straight into one accessibility element (settable elements only) via the native AX helper."),
+    "macos-perform": ("Perform element action", "Run one action the element advertises (e.g. AXPress, AXShowMenu) through the native AX helper."),
 }
 
 # On the iOS Lab's native path "start" and "stop" drive the iOS Simulator, not a container stack.
@@ -178,7 +180,13 @@ SIZE = re.compile(r"^[1-9][0-9]{0,5}[MmGgTt]?$")
 
 
 class PlanError(ValueError):
-    """A request the lab model refuses; the message is safe to show to the user."""
+    """A request the lab model refuses; the message is safe to show to the user. Agent-surface
+    failures carry a machine code (MIR-08) and a retry hint, like computer-use runtimes."""
+
+    def __init__(self, message: str, code: str | None = None, retry: str | None = None):
+        super().__init__(message)
+        self.code = code
+        self.retry = retry
 
 
 # ── Host detection ───────────────────────────────────────────────────────────
@@ -380,9 +388,16 @@ def ios_screenshot() -> bytes:
 # from `screencapture -l` and its accessibility tree from System Events. Control mode posts real
 # clicks through the same macos-app.sh click action the previewed flow uses.
 
-_MACOS_CONTROL = {"armed": False, "armedAt": 0.0}
+_MACOS_CONTROL = {"armed": False, "armedAt": 0.0, "owner": None, "ownerAt": 0.0}
 _MACOS_CONTROL_LOCK = threading.Lock()
 _MACOS_CONTROL_TIMEOUT = 600  # control mode disarms itself after ten idle minutes
+_MACOS_STREAM_EPOCH = 0  # bumped by the panic stop; every stream loop checks it and exits
+
+# MIR-11 agent-safety layer: actions that can submit, send or overwrite get one more gate
+# than plain clicks — they need an explicit confirm flag even while control is armed. The
+# human's arm is the session consent; this flag is the actor's explicit acknowledgement,
+# and both land in the audit log.
+_MACOS_CONFIRM_KINDS = {"enter", "return", "paste"}
 
 
 class _MacosWindows:
@@ -582,31 +597,128 @@ def _diff_elements(previous: list[dict], current: list[dict]) -> dict:
     return {"added": added[:150], "changed": changed[:150], "removed": unused[:150]}
 
 
-def macos_window_elements(root: str, window_id: int, revision: str | None = None) -> dict:
-    """The accessibility tree of one window as window-relative hotspots, from System Events."""
-    if host_os() != "macos":
-        raise PlanError("The app mirror needs a Mac")
+# ── Native AX helper (MIR-09) ────────────────────────────────────────────────
+# The compiled Swift reader in ios-lab/mac/build/ax-helper: full attribute trees in
+# milliseconds with values, focus, enabled state and advertised actions, elements
+# addressable by a child-index path whose identity hash fails closed. Everything
+# falls back to the osascript path when the helper is absent.
+
+_AX_ATTRS = ("AXValue", "AXTitle", "AXDescription", "AXRole", "AXPlaceholderValue", "AXFocused")
+_AX_PATH = re.compile(r"^[0-9.]{0,80}$")
+_AX_INTERACTIVE = {"Button", "CheckBox", "RadioButton", "PopUpButton", "MenuButton", "TextField",
+                   "TextArea", "ComboBox", "SearchField", "Slider", "TabGroup", "Menu", "MenuItem",
+                   "MenuBarItem", "Link", "Switch", "SegmentedControl", "TableRow", "OutlineRow"}
+_AX_ELEMENT_CAP = 400
+
+
+def _ax_helper(root: str) -> str | None:
+    path = os.path.join(root, "ios-lab", "mac", "build", "ax-helper")
+    return path if os.path.isfile(path) and os.access(path, os.X_OK) else None
+
+
+def _ax_call(root: str, args: list[str], timeout: float = 20) -> dict:
+    """One ax-helper invocation; its JSON error payload becomes a coded PlanError."""
+    helper = _ax_helper(root)
+    if not helper:
+        raise PlanError("The native AX helper is not built; run Build AX helper in the macOS Lab page "
+                        "(or reads fall back to osascript where supported)", code="HELPER_MISSING", retry="retry")
+    code, output = _capture([helper] + args, timeout=timeout)
+    payload: dict = {}
+    if output.strip().startswith("{"):
+        try:
+            payload = json.loads(output)
+        except ValueError:
+            payload = {}
+    if code != 0 or payload.get("error"):
+        raise PlanError(payload.get("error") or output.strip()[:200] or "the AX helper failed",
+                        code=payload.get("code") or "INTERNAL", retry="reobserve")
+    return payload
+
+
+def _ax_window_index(root: str, window: dict) -> int:
+    """The AX window matching the CG window record, by rect proximity (no private APIs)."""
+    payload = _ax_call(root, ["windows", "--pid", str(window["pid"])], timeout=15)
+    best, best_distance = None, None
+    for entry in payload.get("windows", []):
+        rect = entry.get("rect") or {}
+        distance = (abs(rect.get("x", 0) - window["x"]) + abs(rect.get("y", 0) - window["y"])
+                    + abs(rect.get("w", 0) - window["width"]) + abs(rect.get("h", 0) - window["height"]))
+        if best_distance is None or distance < best_distance:
+            best, best_distance = entry.get("index"), distance
+    if best is None:
+        raise PlanError("That app exposes no accessibility windows; it may have quit",
+                        code="APP_QUIT", retry="reobserve")
+    return int(best)
+
+
+def _ax_priority(element: dict) -> int:
+    """0 = interactive or advertised actions or focused; 1 = carries text; 2 = decoration."""
+    if element.get("focused") or element.get("actions") or element["role"] in _AX_INTERACTIVE:
+        return 0
+    return 1 if (element.get("label") or element.get("value")) else 2
+
+
+def _flatten_ax(node: dict, out: list, window: dict) -> None:
+    role = (node.get("role") or "").replace("AX", "")
+    rect = node.get("rect") or {}
     try:
-        window_id = int(window_id)
+        x = int(rect.get("x", 0)) - window["x"]
+        y = int(rect.get("y", 0)) - window["y"]
+        w, h = int(rect.get("w", 0)), int(rect.get("h", 0))
     except (TypeError, ValueError):
-        raise PlanError("Invalid window id") from None
-    window = next((w for w in macos_windows()["windows"] if w["windowId"] == window_id), None)
-    if window is None:
-        raise PlanError("That window is not on screen anymore; refresh the mirror")
-    pid = window["pid"]
+        return
+    if w <= 0 or h <= 0 or x >= window["width"] or y >= window["height"] or x + w <= 0 or y + h <= 0:
+        return  # invisible: same rules the osascript path applies
+    out.append((_ax_priority({
+        "role": role, "actions": node.get("actions") or [], "focused": bool(node.get("focused")),
+        "label": node.get("label") or node.get("title"), "value": node.get("value"),
+    }), {
+        "role": role,
+        "label": (node.get("label") or node.get("title") or "")[:120],
+        "value": (node.get("value") or "")[:200] or None,
+        "placeholder": node.get("placeholder") or None,
+        "enabled": node.get("enabled", True),
+        "focused": bool(node.get("focused")),
+        "actions": node.get("actions") or [],
+        "path": node.get("path") or "",
+        "identity": node.get("identity") or "",
+        "x": x, "y": y, "w": w, "h": h,
+    }))
+    for child in node.get("children") or []:
+        _flatten_ax(child, out, window)
+
+
+def _ax_elements(root: str, window: dict) -> dict:
+    """The helper tree of one pinned window, window-relative, priority-trimmed (MIR-08)."""
+    index = _ax_window_index(root, window)
+    payload = _ax_call(root, ["tree", "--pid", str(window["pid"]), "--window", str(index),
+                              "--depth", "14"], timeout=30)
+    flat: list = []
+    _flatten_ax(payload.get("tree") or {}, flat, window)
+    flat.sort(key=lambda pair: (pair[0], -(pair[1]["w"] * pair[1]["h"])))
+    trimmed = len(flat) > _AX_ELEMENT_CAP
+    elements = [entry for _, entry in flat[:_AX_ELEMENT_CAP]]
+    focused = next((e for e in elements if e["focused"]), None)
+    return {"engine": "ax-helper", "trimmed": trimmed, "elements": elements,
+            "focusedPath": focused["path"] if focused else None}
+
+
+def _osascript_elements(root: str, window: dict) -> dict:
+    """The original System Events read; the fallback when the helper is not built."""
     # A property read is the honest probe: counting windows works without permission, reads do not.
     code, output = _capture(["osascript", "-e",
                              f'tell application "System Events" to get position of window 1 of '
-                             f'(first application process whose unix id is {int(pid)})'], timeout=10)
+                             f'(first application process whose unix id is {int(window["pid"])})'], timeout=10)
     if code != 0:
         raise PlanError("Reading UI elements needs Accessibility permission for the console "
-                        "(System Settings > Privacy & Security > Accessibility), and the app needs a visible window.")
+                        "(System Settings > Privacy & Security > Accessibility), and the app needs a visible window.",
+                        code="PERMISSION_DENIED", retry="retry")
     script = os.path.join(root, "ios-lab", "mac", "ax-elements.applescript")
     if not os.path.isfile(script):
-        raise PlanError("ax-elements.applescript is missing from ios-lab/mac")
-    code, output = _capture(["osascript", script, str(pid), str(window["x"]), str(window["y"])], timeout=60)
+        raise PlanError("ax-elements.applescript is missing from ios-lab/mac", code="INTERNAL")
+    code, output = _capture(["osascript", script, str(window["pid"]), str(window["x"]), str(window["y"])], timeout=60)
     if code != 0:
-        raise PlanError("Could not read UI elements: " + output.strip()[:200])
+        raise PlanError("Could not read UI elements: " + output.strip()[:200], code="INTERNAL", retry="reobserve")
     elements = []
     for line in output.splitlines():
         parts = line.split("\t")
@@ -625,10 +737,38 @@ def macos_window_elements(root: str, window_id: int, revision: str | None = None
                 or element["x"] + element["w"] <= 0 or element["y"] + element["h"] <= 0:
             continue
         elements.append(element)
+    return {"engine": "osascript", "trimmed": len(elements) >= 150, "elements": elements, "focusedPath": None}
+
+
+def macos_window_elements(root: str, window_id: int, revision: str | None = None) -> dict:
+    """The accessibility tree of one window as window-relative hotspots: the native helper
+    (values, focus, actions, paths) with the osascript path as the honest fallback."""
+    if host_os() != "macos":
+        raise PlanError("The app mirror needs a Mac")
+    try:
+        window_id = int(window_id)
+    except (TypeError, ValueError):
+        raise PlanError("Invalid window id") from None
+    window = next((w for w in macos_windows()["windows"] if w["windowId"] == window_id), None)
+    if window is None:
+        raise PlanError("That window is not on screen anymore; refresh the mirror", code="APP_QUIT", retry="reobserve")
+    read: dict | None = None
+    if _ax_helper(root):
+        try:
+            read = _ax_elements(root, window)
+        except PlanError as e:
+            if e.code in ("PERMISSION_DENIED", "APP_QUIT", "TIMEOUT"):
+                raise  # the fallback cannot fix a permission or a dead app
+            read = None  # helper-specific trouble: fall back to osascript below
+    if read is None:
+        read = _osascript_elements(root, window)
+    elements = read["elements"]
     with _MACOS_ELEMENTS_LOCK:
         token = _element_revision(elements)
         cached = _MACOS_ELEMENTS.get(window_id)
         result = {"windowId": window_id, "app": window["app"], "revision": token,
+                  "engine": read["engine"], "trimmed": read["trimmed"],
+                  "focusedPath": read["focusedPath"],
                   "bounds": {"x": window["x"], "y": window["y"],
                              "width": window["width"], "height": window["height"]},
                   "elements": elements,
@@ -642,50 +782,267 @@ def macos_window_elements(root: str, window_id: int, revision: str | None = None
     return result
 
 
+def _ax_window_arg(root: str, window_id) -> str:
+    """The AX window index for a CG window id, or "-" when the caller has none: tree paths
+    are window-relative, so element actions must resolve against the same pinned window."""
+    if window_id in (None, ""):
+        return "-"
+    try:
+        window_id = int(window_id)
+    except (TypeError, ValueError):
+        raise PlanError("windowId must be an integer", code="INVALID_ARGS") from None
+    window = next((w for w in macos_windows()["windows"] if w["windowId"] == window_id), None)
+    if window is None:
+        raise PlanError("That window is not on screen anymore; refresh the mirror",
+                        code="APP_QUIT", retry="reobserve")
+    return str(_ax_window_index(root, window))
+
+
+def macos_ax_read(root: str, data: dict) -> dict:
+    """One attribute of one element by path (read-only; no armed mode needed)."""
+    pid = _ax_pid(data)
+    path = _ax_path(data)
+    attr = data.get("attr") or "AXValue"
+    if attr not in _AX_ATTRS:
+        raise PlanError(f"attr must be one of: {', '.join(_AX_ATTRS)}", code="INVALID_ARGS")
+    args = ["read", "--pid", str(pid), "--path", path, "--identity", _ax_identity(data), "--attr", attr]
+    window_arg = _ax_window_arg(root, data.get("windowId"))
+    if window_arg != "-":
+        args += ["--window", window_arg]
+    payload = _ax_call(root, args, timeout=15)
+    return {"pid": pid, "path": path, "attr": attr, "value": payload.get("value")}
+
+
+def macos_ax_set(root: str, data: dict) -> dict:
+    """Set one element's value through the AX helper (MIR-07). Armed control mode; audited."""
+    _macos_control_gate(root, data)
+    pid = _ax_pid(data)
+    path = _ax_path(data)
+    value = data.get("value")
+    if not isinstance(value, str) or not value or len(value) > 2000 \
+            or not all(c.isprintable() and c != "\n" and c != "\r" for c in value):
+        raise PlanError("value must be 1-2000 printable characters (no Return)", code="INVALID_ARGS",
+                        retry="never")
+    args = ["set", "--pid", str(pid), "--path", path, "--identity", _ax_identity(data), "--value", value]
+    window_arg = _ax_window_arg(root, data.get("windowId"))
+    if window_arg != "-":
+        args += ["--window", window_arg]
+    payload = _ax_call(root, args, timeout=20)
+    _macos_audit(root, "ax-set", window=_macos_window_for_pid(pid),
+                 detail={"path": path, "textLength": len(value), "ok": True}, thumbnail=True)
+    return {"ok": True, "pid": pid, "path": path, "actionSent": True, "verify": payload.get("verify")}
+
+
+def macos_ax_perform(root: str, data: dict) -> dict:
+    """One advertised AX action on one element (MIR-07). Armed control mode; audited."""
+    _macos_control_gate(root, data)
+    pid = _ax_pid(data)
+    path = _ax_path(data)
+    action = data.get("action")
+    if not isinstance(action, str) or not re.match(r"^AX[A-Za-z]{2,40}$", action):
+        raise PlanError("action must be an advertised AX action name (e.g. AXPress)", code="INVALID_ARGS",
+                        retry="never")
+    args = ["perform", "--pid", str(pid), "--path", path, "--identity", _ax_identity(data), "--action", action]
+    window_arg = _ax_window_arg(root, data.get("windowId"))
+    if window_arg != "-":
+        args += ["--window", window_arg]
+    payload = _ax_call(root, args, timeout=20)
+    _macos_audit(root, "ax-perform", window=_macos_window_for_pid(pid),
+                 detail={"path": path, "axAction": action, "ok": True}, thumbnail=True)
+    return {"ok": True, "pid": pid, "path": path, "action": action, "actionSent": True}
+
+
+def macos_ax_windows(root: str, data: dict) -> dict:
+    """The AX window list of one app: rects, titles, subroles, sheets and alerts flagged (MIR-10)."""
+    pid = _ax_pid(data)
+    return _ax_call(root, ["windows", "--pid", str(pid)], timeout=15)
+
+
+def macos_ax_menubar(root: str, data: dict) -> dict:
+    """The menu-bar tree of one app (MIR-10): menus and items with enabled state and actions."""
+    pid = _ax_pid(data)
+    return _ax_call(root, ["menubar", "--pid", str(pid)], timeout=15)
+
+
+def macos_ax_focused(root: str, data: dict) -> dict:
+    """The focused element of one app with its attributes (MIR-08)."""
+    pid = _ax_pid(data)
+    return _ax_call(root, ["focused", "--pid", str(pid)], timeout=15)
+
+
+def _ax_pid(data: dict) -> int:
+    try:
+        pid = int(data.get("pid"))
+    except (TypeError, ValueError):
+        raise PlanError("pid must be an integer", code="INVALID_ARGS") from None
+    if not 0 <= pid <= 100000:
+        raise PlanError("pid is out of range", code="INVALID_ARGS")
+    return pid
+
+
+def _ax_path(data: dict) -> str:
+    path = data.get("path")
+    if not isinstance(path, str) or not _AX_PATH.match(path):
+        raise PlanError("path must be a child-index chain like 0.3.1", code="INVALID_ARGS")
+    return path
+
+
+def _ax_identity(data: dict) -> str:
+    identity = data.get("identity") or ""
+    if not isinstance(identity, str) or not re.match(r"^[0-9a-f]{0,16}$", identity):
+        raise PlanError("identity must be the hex hash from the tree read", code="INVALID_ARGS")
+    return identity
+
+
 def macos_control_state() -> dict:
     """Whether armed control mode is active; it disarms itself after ten idle minutes."""
     with _MACOS_CONTROL_LOCK:
         armed = _MACOS_CONTROL["armed"] and time.time() - _MACOS_CONTROL["armedAt"] < _MACOS_CONTROL_TIMEOUT
         if not armed:
             _MACOS_CONTROL["armed"] = False
-        return {"armed": armed, "expiresInSec": int(_MACOS_CONTROL_TIMEOUT - (time.time() - _MACOS_CONTROL["armedAt"])) if armed else 0}
+            _MACOS_CONTROL["owner"] = None
+        return {"armed": armed,
+                "owner": _MACOS_CONTROL["owner"] if armed else None,
+                "expiresInSec": int(_MACOS_CONTROL_TIMEOUT - (time.time() - _MACOS_CONTROL["armedAt"])) if armed else 0}
 
 
-def macos_control_arm(root: str, armed: bool) -> dict:
-    if not isinstance(armed, bool):
-        raise PlanError("armed must be true or false")
+def macos_screen_locked() -> bool | None:
+    """Whether the screen is locked (MIR-11): CGSessionCopyCurrentDictionary carries the
+    CGSSessionScreenIsLocked key. None when macOS does not tell us."""
+    if host_os() != "macos":
+        return None
+    try:
+        cg = _macos_cg()
+        cg.CGSessionCopyCurrentDictionary.restype = ctypes.c_void_p
+        cg.CFBooleanGetValue.restype = ctypes.c_bool
+        cg.CFBooleanGetValue.argtypes = [ctypes.c_void_p]
+        session = cg.CGSessionCopyCurrentDictionary()
+        if not session:
+            return None
+        ref = cg.cf.CFDictionaryGetValue(session, cg._cfstr("CGSSessionScreenIsLocked"))
+        if not ref:
+            return None
+        if cg.cf.CFGetTypeID(ref) == cg.cf.CFBooleanGetTypeID():
+            return bool(cg.CFBooleanGetValue(ref))
+        return bool(cg._number(ref))
+    except (OSError, AttributeError):
+        return None
+
+
+def _macos_allowlist(root: str, app: str | None = None, bundle: str | None = None) -> None:
+    """The agent app allowlist (MIR-11): ios-lab/mac/agent-apps.json lists app names or bundle
+    ids that input actions may drive; missing or empty means every mirror-visible app."""
+    path = os.path.join(root, "ios-lab", "mac", "agent-apps.json")
+    try:
+        with open(path, encoding="utf-8") as f:
+            allowed = json.load(f)
+    except (OSError, ValueError):
+        return
+    if not isinstance(allowed, list) or not allowed:
+        return
+    names = {str(entry).strip().lower() for entry in allowed if isinstance(entry, str)}
+    if bundle and bundle.lower() in names:
+        return
+    app_name = (app or "").lower()
+    if app_name and app_name in names:
+        return
+    resolved = None
+    if app_name and '"' not in app_name:
+        code, output = _capture(["osascript", "-e", f'id of app "{app_name.title()}"'], timeout=10)
+        if code == 0:
+            resolved = output.strip().lower()
+    if resolved and resolved in names:
+        return
+    raise PlanError(f"{app or bundle or 'That app'} is not on this lab's agent allowlist (ios-lab/mac/agent-apps.json)",
+                    code="APP_NOT_ALLOWED", retry="never")
+
+
+def _macos_control_gate(root: str, data: dict, *, app: str | None = None,
+                        submit_kind: str | None = None) -> None:
+    """Every armed input passes this gate (MIR-11): armed with a live timer, one owner,
+    an unlocked screen, an allowlisted app, and — for submit-class kinds — an explicit
+    confirm flag even while armed."""
     with _MACOS_CONTROL_LOCK:
+        armed = _MACOS_CONTROL["armed"] and time.time() - _MACOS_CONTROL["armedAt"] < _MACOS_CONTROL_TIMEOUT
+        owner = _MACOS_CONTROL["owner"] if armed else None
+    if not armed:
+        raise PlanError("Control mode is not armed; arm the app mirror first", code="NOT_ARMED", retry="retry")
+    requested = data.get("owner")
+    if owner and requested and requested != owner:
+        raise PlanError(f"Another client (armed {int(time.time() - _MACOS_CONTROL['armedAt'])}s ago) holds control; "
+                        "disarm it there or stop the session first", code="INPUT_BUSY", retry="never")
+    locked = macos_screen_locked()
+    if locked:
+        raise PlanError("The screen is locked; unlock this Mac to run input actions",
+                        code="SCREEN_LOCKED", retry="retry")
+    _macos_allowlist(root, app)
+    if submit_kind and submit_kind in _MACOS_CONFIRM_KINDS and data.get("confirm") is not True:
+        raise PlanError(f"{submit_kind} can submit or overwrite: send confirm:true from the explicit "
+                        "dialog, even while control is armed", code="CONFIRM_REQUIRED", retry="never")
+
+
+def macos_control_arm(root: str, armed: bool, owner: str | None = None) -> dict:
+    if not isinstance(armed, bool):
+        raise PlanError("armed must be true or false", code="INVALID_ARGS")
+    with _MACOS_CONTROL_LOCK:
+        if armed and _MACOS_CONTROL["armed"] and _MACOS_CONTROL["owner"] \
+                and owner and owner != _MACOS_CONTROL["owner"]:
+            raise PlanError("Another client already holds armed control (single-owner input, MIR-11)",
+                            code="INPUT_BUSY", retry="never")
         _MACOS_CONTROL["armed"] = armed
         _MACOS_CONTROL["armedAt"] = time.time()
-    _macos_audit(root, "arm" if armed else "disarm")
+        _MACOS_CONTROL["owner"] = owner if armed else None
+    _macos_audit(root, "arm" if armed else "disarm", detail={"owner": owner} if owner else None)
     return macos_control_state()
+
+
+def macos_panic_stop(root: str) -> dict:
+    """The panic stop (MIR-11): disarm, close every deep-inspect session, end every stream,
+    record one audit row. Idempotent and always safe to call."""
+    closed = []
+    with _MACOS_CONTROL_LOCK:
+        _MACOS_CONTROL["armed"] = False
+        _MACOS_CONTROL["owner"] = None
+    with _MACOS_SESSIONS_LOCK:
+        sessions = list(_MACOS_SESSIONS.items())
+        _MACOS_SESSIONS.clear()
+    global _MACOS_STREAM_EPOCH
+    with _MACOS_CONTROL_LOCK:
+        _MACOS_STREAM_EPOCH += 1
+        epoch = _MACOS_STREAM_EPOCH
+    for bundle, entry in sessions:
+        try:
+            _appium_request(_macos_appium_base(root), "DELETE", f"/session/{entry['sessionId']}", timeout=10)
+            closed.append(bundle)
+        except PlanError:
+            closed.append(bundle)  # Appium unreachable — the session record is dropped regardless
+    _macos_audit(root, "panic-stop", detail={"sessionsClosed": closed, "epoch": epoch})
+    return {"ok": True, "disarmed": True, "sessionsClosed": closed, "streamEpoch": epoch}
 
 
 def macos_control_click(root: str, data: dict) -> dict:
     """One immediate click while control mode is armed: bring the owning app forward, then post
     the event through macos-app.sh click — the same script the previewed flow runs."""
-    with _MACOS_CONTROL_LOCK:
-        armed = _MACOS_CONTROL["armed"] and time.time() - _MACOS_CONTROL["armedAt"] < _MACOS_CONTROL_TIMEOUT
-    if not armed:
-        raise PlanError("Control mode is not armed; arm the app mirror first")
     values = {}
     for key in ("pid", "x", "y"):
         try:
             value = int(data.get(key))
         except (TypeError, ValueError):
-            raise PlanError(f"{key} must be an integer") from None
+            raise PlanError(f"{key} must be an integer", code="INVALID_ARGS") from None
         if not 0 <= value <= 100000:
-            raise PlanError(f"{key} is out of range")
+            raise PlanError(f"{key} is out of range", code="INVALID_ARGS")
         values[key] = value
+    window = _macos_window_for_pid(values["pid"])
+    _macos_control_gate(root, data, app=window.get("app") if window else None)
     script = _scoped(root, "ios-lab", "mac", "macos-app.sh")
     code, output = _capture(["bash", script, "click", str(values["pid"]), str(values["x"]), str(values["y"])], timeout=30)
     with _MACOS_CONTROL_LOCK:
         _MACOS_CONTROL["armedAt"] = time.time()  # each click slides the disarm timer
-    _macos_audit(root, "click", window=_macos_window_for_pid(values["pid"]),
+    _macos_audit(root, "click", window=window,
                  detail={"x": values["x"], "y": values["y"], "ok": code == 0}, thumbnail=True)
     if code != 0:
-        raise PlanError(output.strip()[:200] or "The click did not run")
-    return {"ok": True, **values}
+        raise PlanError(output.strip()[:200] or "The click did not run", code="INTERNAL", retry="retry")
+    return {"ok": True, "actionSent": True, **values}
 
 
 # ── macOS app mirror roadmap (MIR-01…06) ─────────────────────────────────────
@@ -779,7 +1136,7 @@ def macos_audit_download() -> bytes:
 
 # The mirror actions that run through the preview → confirm → job pipeline; the armed halves of
 # these (and arm/disarm, sessions) audit themselves where they run.
-_MACOS_MIRROR_ACTIONS = ("macos-click", "macos-input", "macos-element")
+_MACOS_MIRROR_ACTIONS = ("macos-click", "macos-input", "macos-element", "macos-set-value", "macos-perform")
 
 
 def macos_audit_preview(root: str, request: dict, kind: str, token: str | None = None) -> None:
@@ -799,80 +1156,104 @@ def macos_audit_preview(root: str, request: dict, kind: str, token: str | None =
 # MIR-01: the input family — double-click, right-click, type and press-key — with the same
 # preview → confirm (or armed) pipeline as the single click. Typing never sends Return:
 # newlines are refused here and in the script, and Enter is its own explicit key action.
-_MACOS_INPUT_KINDS = ("double", "right", "type", "key")
+_MACOS_INPUT_KINDS = ("double", "right", "type", "key", "paste")
 _MACOS_INPUT_KEYS = ("tab", "escape", "delete", "forward-delete", "up", "down", "left", "right",
-                     "space", "enter")
+                     "space", "enter", "return")
 _INPUT_TEXT_MAX = 200
+_PASTE_TEXT_MAX = 2000
 
 
 def _validated_input(data: dict) -> dict:
     """pid/x/y plus one kind with its payload, for the armed route and the plan builder alike."""
-    values = {}
+    values = {"owner": data.get("owner"), "confirm": data.get("confirm") is True}
     for key in ("pid", "x", "y"):
         try:
             value = int(data.get(key))
         except (TypeError, ValueError):
-            raise PlanError(f"{key} must be an integer") from None
+            raise PlanError(f"{key} must be an integer", code="INVALID_ARGS") from None
         if not 0 <= value <= 100000:
-            raise PlanError(f"{key} is out of range")
+            raise PlanError(f"{key} is out of range", code="INVALID_ARGS")
         values[key] = value
     kind = data.get("kind")
     if kind not in _MACOS_INPUT_KINDS:
-        raise PlanError("kind must be one of: " + ", ".join(_MACOS_INPUT_KINDS))
+        raise PlanError("kind must be one of: " + ", ".join(_MACOS_INPUT_KINDS), code="INVALID_ARGS")
     values["kind"] = kind
-    if kind == "type":
+    if kind in ("type", "paste"):
         text = data.get("text")
-        if not isinstance(text, str) or not text or len(text) > _INPUT_TEXT_MAX \
-                or not all(32 <= ord(c) <= 126 for c in text):
-            raise PlanError(f"The text must be 1-{_INPUT_TEXT_MAX} printable characters; "
-                            "Return is never sent by a type action")
+        limit = _INPUT_TEXT_MAX if kind == "type" else _PASTE_TEXT_MAX
+        # A paste may legitimately carry newlines (multiline paste); typing may never: Return
+        # is its own explicit key action, and pastes are gated separately (MIR-11).
+        ok_chars = all(32 <= ord(c) <= 126 or (kind == "paste" and c in "\n\t") for c in text or "")
+        if not isinstance(text, str) or not text or len(text) > limit or not ok_chars:
+            raise PlanError(f"The text must be 1-{limit} printable characters"
+                            + ("" if kind == "paste" else "; Return is never sent by a type action"),
+                            code="INVALID_ARGS", retry="never")
         values["text"] = text
+        values["submitKind"] = "paste" if kind == "paste" else None
     if kind == "key":
         if data.get("key") not in _MACOS_INPUT_KEYS:
-            raise PlanError("key must be one of: " + ", ".join(_MACOS_INPUT_KEYS))
+            raise PlanError("key must be one of: " + ", ".join(_MACOS_INPUT_KEYS), code="INVALID_ARGS")
         values["key"] = data.get("key")
+        values["submitKind"] = "enter" if data.get("key") in ("enter", "return") else None
     return values
 
 
-def _run_control_script(root: str, args: list[str], kind: str, values: dict) -> tuple[int, str]:
-    """One armed input action through macos-app.sh input, audited with a frame thumbnail."""
-    with _MACOS_CONTROL_LOCK:
-        armed = _MACOS_CONTROL["armed"] and time.time() - _MACOS_CONTROL["armedAt"] < _MACOS_CONTROL_TIMEOUT
-    if not armed:
-        raise PlanError("Control mode is not armed; arm the app mirror first")
+def _run_control_script(root: str, args: list[str], values: dict) -> dict:
+    """One armed input action through macos-app.sh input: gated, audited with a frame
+    thumbnail, and verified after the fact when the helper can read the focused element."""
+    window = _macos_window_for_pid(values["pid"])
+    _macos_control_gate(root, {"owner": values.get("owner"), "confirm": values.get("confirm")},
+                        app=window.get("app") if window else None,
+                        submit_kind=values.get("submitKind"))
     script = _scoped(root, "ios-lab", "mac", "macos-app.sh")
     code, output = _capture(["bash", script] + args, timeout=30)
     with _MACOS_CONTROL_LOCK:
         _MACOS_CONTROL["armedAt"] = time.time()
-    _macos_audit(root, "input-" + values["kind"], window=_macos_window_for_pid(values["pid"]),
+    _macos_audit(root, "input-" + values["kind"], window=window,
                  detail={"x": values["x"], "y": values["y"], "key": values.get("key"),
-                         "textLength": len(values.get("text", "")), "ok": code == 0}, thumbnail=True)
+                         "textLength": len(values.get("text", "")), "ok": code == 0,
+                         "confirmed": bool(values.get("confirm"))}, thumbnail=True)
     if code != 0:
-        raise PlanError(output.strip()[:200] or "The action did not run")
-    return code, output
+        raise PlanError(output.strip()[:200] or "The action did not run", code="INTERNAL", retry="retry")
+    verify = _ax_verify_after(root, values["pid"])
+    return {"ok": True, "actionSent": True, **values, "verify": verify} if verify else {"ok": True, "actionSent": True, **values}
+
+
+def _ax_verify_after(root: str, pid: int) -> dict | None:
+    """Re-read the focused element after an input action (MIR-08 verify-after-act); best effort."""
+    if not _ax_helper(root):
+        return None
+    try:
+        payload = _ax_call(root, ["focused", "--pid", str(pid)], timeout=10)
+        node = payload.get("focused") or {}
+        if not isinstance(node, dict) or not node:
+            return None
+        return {"role": node.get("role"), "value": (node.get("value") or "")[:200] or None,
+                "path": node.get("path"), "label": (node.get("label") or "")[:80] or None}
+    except PlanError:
+        return None
 
 
 def macos_control_input(root: str, data: dict) -> dict:
-    """One immediate double-click, right-click, typed text or key press while control is armed."""
+    """One immediate double-click, right-click, typed text, key press or paste while armed."""
     values = _validated_input(data)
     args = ["input", str(values["pid"]), str(values["x"]), str(values["y"]), values["kind"]]
-    if values["kind"] == "type":
-        args.append(values["text"])
-    elif values["kind"] == "key":
-        args.append(values["key"])
-    _run_control_script(root, args, values["kind"], values)
-    return {"ok": True, **values}
+    if values["kind"] in ("type", "paste", "key"):
+        args.append(values["text"] if values["kind"] != "key" else values["key"])
+    return _run_control_script(root, args, values)
 
 
 # MIR-04: the streaming mirror — one multipart MJPEG response instead of a poll per frame.
 _MACOS_STREAM_CAP = 600  # a stream never outlives ten minutes, so handlers cannot dangle
 
 
-def macos_window_stream(window_id: int, fps: float):
+def macos_window_stream(window_id: int, fps: float, epoch: int | None = None):
     """Yield PNG frames for the multipart response at the requested pace. Ends when the
-    window is gone; the response handler also stops on client disconnect or the hard cap."""
+    window is gone, when a panic stop bumped the epoch, or at the handler's hard cap."""
     interval = 1.0 / fps
     while True:
+        if epoch is not None and epoch != _MACOS_STREAM_EPOCH:
+            return  # a panic stop ended this stream
         try:
             yield macos_window_screenshot(window_id)
         except PlanError:
@@ -976,12 +1357,18 @@ def macos_session_open(root: str, data: dict) -> dict:
     control mode only; a repeated open returns the session that is already open, and
     disarming closes every session."""
     if not _macos_control_armed():
-        raise PlanError("Control mode is not armed; arm the app mirror to open a deep-inspect session")
+        raise PlanError("Control mode is not armed; arm the app mirror to open a deep-inspect session",
+                        code="NOT_ARMED", retry="retry")
+    locked = macos_screen_locked()
+    if locked:
+        raise PlanError("The screen is locked; unlock this Mac to open a deep-inspect session",
+                        code="SCREEN_LOCKED", retry="retry")
     bundle = data.get("bundleId")
     if bundle in (None, "") and data.get("app"):
         bundle = _macos_bundle_id_for_app(data.get("app"))
     if not isinstance(bundle, str) or not _BUNDLE_ID.match(bundle) or "." not in bundle:
-        raise PlanError("bundleId must look like com.example.app")
+        raise PlanError("bundleId must look like com.example.app", code="INVALID_ARGS")
+    _macos_allowlist(root, data.get("app") if isinstance(data.get("app"), str) else None, bundle)
     with _MACOS_SESSIONS_LOCK:
         entry = _MACOS_SESSIONS.get(bundle)
     if entry:
@@ -1497,7 +1884,8 @@ def plan(root: str, request: dict, host: dict | None = None) -> dict:
         return source_control.plan(root, request)
     allowed = {"lab", "action", "profile", "cpus", "ram", "disk", "device", "wslDistro", "backup",
                "clickPid", "clickX", "clickY", "inputKind", "inputText", "inputKey",
-               "elementId", "elementKind", "elementSession", "elementBundle"}
+               "elementId", "elementKind", "elementSession", "elementBundle",
+               "elementPid", "elementPath", "elementIdentity", "axAction", "elementValue", "elementWindowId"}
     unknown = set(request) - allowed
     if unknown:
         raise PlanError("Unknown request fields: " + ", ".join(sorted(unknown)))
@@ -1577,6 +1965,41 @@ def plan(root: str, request: dict, host: dict | None = None) -> dict:
         if bundle is not None and (not isinstance(bundle, str) or not _BUNDLE_ID.match(bundle)):
             raise PlanError("elementBundle must look like com.example.app")
         element_values["bundle"] = bundle or "the app"
+    ax_values: dict = {}
+    if any(request.get(k) not in (None, "") for k in ("elementPid", "elementPath", "elementIdentity", "axAction", "elementValue", "elementWindowId")) \
+            and action not in ("macos-set-value", "macos-perform"):
+        raise PlanError("AX element parameters are only accepted by the set-value and perform actions")
+    if action in ("macos-set-value", "macos-perform"):
+        try:
+            ax_pid = int(request.get("elementPid"))
+        except (TypeError, ValueError):
+            raise PlanError("elementPid must be an integer", code="INVALID_ARGS") from None
+        if not 0 <= ax_pid <= 100000:
+            raise PlanError("elementPid is out of range", code="INVALID_ARGS")
+        path = request.get("elementPath")
+        if not isinstance(path, str) or not _AX_PATH.match(path):
+            raise PlanError("elementPath must be a child-index chain like 0.3.1", code="INVALID_ARGS")
+        identity = request.get("elementIdentity") or ""
+        if not isinstance(identity, str) or not re.match(r"^[0-9a-f]{0,16}$", identity):
+            raise PlanError("elementIdentity must be the hex hash from the tree read", code="INVALID_ARGS")
+        try:
+            ax_window = int(request.get("elementWindowId"))
+        except (TypeError, ValueError):
+            raise PlanError("elementWindowId must be the CG window id from the mirror", code="INVALID_ARGS") from None
+        ax_values = {"pid": ax_pid, "path": path, "identity": identity, "window": ax_window}
+        if action == "macos-set-value":
+            value = request.get("elementValue")
+            if not isinstance(value, str) or not value or len(value) > 2000 \
+                    or not all(c.isprintable() and c not in "\r\n" for c in value):
+                raise PlanError("elementValue must be 1-2000 printable characters (no Return)",
+                                code="INVALID_ARGS", retry="never")
+            ax_values["value"] = value
+        else:
+            ax_action = request.get("axAction")
+            if not isinstance(ax_action, str) or not re.match(r"^AX[A-Za-z]{2,40}$", ax_action):
+                raise PlanError("axAction must be an advertised AX action name (e.g. AXPress)",
+                                code="INVALID_ARGS", retry="never")
+            ax_values["action"] = ax_action
     if request.get("backup"):
         raise PlanError("Restore is not available from the web console; use the lab's scripts/restore.sh")
 
@@ -1597,6 +2020,7 @@ def plan(root: str, request: dict, host: dict | None = None) -> dict:
                 "appium-start": ("appium.sh", "start"), "appium-stop": ("appium.sh", "stop"),
                 "macos-smoke": ("macos-app.sh", "smoke"), "macos-click": ("macos-app.sh", "click"),
                 "macos-input": ("macos-app.sh", "input"), "macos-element": ("macos-app.sh", "element"),
+                "macos-set-value": ("macos-app.sh", "axset"), "macos-perform": ("macos-app.sh", "axperform"),
             }[action]
         else:
             script, extra = {
@@ -1639,6 +2063,17 @@ def plan(root: str, request: dict, host: dict | None = None) -> dict:
             else:
                 effects.append(f"Clicks element {element_values['element']} through the open mac2 "
                                f"session for {element_values['bundle']}.")
+        if action == "macos-set-value":
+            selected = [str(ax_values["pid"]), str(ax_values["window"]), ax_values["path"],
+                        ax_values["identity"], ax_values["value"]]
+            effects.append(f"Writes {len(ax_values['value'])} characters straight into element "
+                           f"{ax_values['path']} of pid {ax_values['pid']} through the AX helper — "
+                           "no Return is sent.")
+        if action == "macos-perform":
+            selected = [str(ax_values["pid"]), str(ax_values["window"]), ax_values["path"],
+                        ax_values["identity"], ax_values["action"]]
+            effects.append(f"Performs {ax_values['action']} on element {ax_values['path']} of pid "
+                           f"{ax_values['pid']} through the AX helper; the element must advertise it.")
         path = _scoped(root, "ios-lab", "mac", script)
         if not os.path.isfile(path):
             raise PlanError("Provider script is missing: ios-lab/mac/" + script)
