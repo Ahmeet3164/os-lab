@@ -35,13 +35,12 @@ All guest state is in `storage/`; configuration is `.env` plus compose.
 before extracting, so restores are reversible. `make reset CONFIRM=yes` destroys
 the disk and reinstalls on next boot.
 
-## Native Windows host monitor
+## Windows Apps Lab
 
-On a real Windows host, the dashboard's Windows Lab page can show visible
-desktop applications from the current user session through
-[[console/windows_apps.py]]: PID + start-time identity, name, window title,
-memory, total CPU time and responsiveness. It is read-only, independent of VM
-readiness, and does not inspect the Windows VM or offer process control.
+On a real Windows host, the dashboard can open the separate `winapps` lab. It
+serves a read-only desktop mirror through [[console/winapps.py]] with ctypes
+window enumeration and a `PrintWindow` capture; no process control is offered.
+This is separate from the Windows VM lifecycle and public Pages never mounts it.
 
 ## Research
 

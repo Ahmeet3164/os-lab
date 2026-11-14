@@ -8,7 +8,7 @@
 import { useEffect, useReducer } from "react";
 import type { CapabilityCatalog } from "../health/capabilities";
 
-export type LabId = "android" | "windows" | "linux" | "ios" | "macos" | "source";
+export type LabId = "android" | "windows" | "winapps" | "linux" | "ios" | "macos" | "source";
 export type LabState = "ready" | "needs-setup" | "unavailable";
 
 export interface HostTool {
@@ -186,6 +186,24 @@ export interface MacElementsInfo {
 export interface MacControlState {
   armed: boolean;
   expiresInSec: number;
+}
+/** One visible desktop window in the current Windows session (console/winapps.py). */
+export interface WinApp {
+  /** Stable HWND; Windows can reuse an HWND only after the window is gone. */
+  windowId: number;
+  pid: number;
+  app: string;
+  title: string;
+  className: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+export interface WinAppsInfo {
+  available: boolean;
+  reason: string | null;
+  windows: WinApp[];
 }
 /** One visible desktop application in the current Windows session (console/windows_apps.py). */
 export interface WindowsApp {
@@ -460,6 +478,8 @@ export const api = {
   macosControlArm: (armed: boolean) => post<MacControlState>("/api/labs/macos/control", { armed }),
   macosClick: (pid: number, x: number, y: number) =>
     post<{ ok: boolean; pid: number; x: number; y: number }>("/api/labs/macos/click", { pid, x, y }),
+  winappsApps: () => call<WinAppsInfo>("/api/labs/winapps/apps"),
+  winappsAppScreenshotUrl: (windowId: number) => `/api/labs/winapps/apps/${windowId}/screenshot`,
   windowsApps: () => call<WindowsAppsInfo>("/api/labs/windows/apps"),
   plan: (request: LabRequest) => post<{ plan: LabPlan; token: string }>("/api/labs/plan", { request }),
   start: (request: LabRequest, token: string) => post<LabJob>("/api/labs/start", { request, token }),

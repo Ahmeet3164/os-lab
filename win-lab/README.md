@@ -66,6 +66,12 @@ or arbitrary shell access. Public Pages does not mount or call this panel.
 A process is identified by PID plus start time, so Windows reusing a PID cannot
 replace the selected application.
 
+## Windows Apps Lab
+
+On a real Windows host, a separate `/labs/winapps/` page mirrors visible desktop
+application windows. It is independent of this Windows VM; no process control is
+offered in the read-only phase.
+
 ## Make targets
 
 | Target | What it does |

@@ -26,7 +26,7 @@ import { ShellSnippet } from "../apk-lab/components";
 import { Badge, Empty, EndpointList, Field, IconButton, Modal, PageHead, Section, Skeleton, Status } from "../components/ui";
 import { SimulatorDrawer } from "./ios-simulator";
 import { MacAppMirrorTeaser, MacAppPanel } from "./macos-app-mirror";
-import { WindowsAppsPanel } from "./windows-apps";
+import { WinAppsPanel } from "./winapps-app-mirror";
 import { stateBadge } from "./host-page";
 import {
   ago,
@@ -46,6 +46,7 @@ import {
 const REFERENCE: Record<LabId, { check: string; setup: string; where: string }> = {
   android: { check: "./labctl android doctor", setup: "./labctl android start --wait", where: "android-lab/lab" },
   windows: { check: "./labctl win status", setup: "./labctl win profile use development\n./labctl win start --wait", where: "win-lab" },
+  winapps: { check: "python console/winapps.py", setup: "Run this panel on a Windows host.", where: "winapps" },
   linux: { check: "./labctl linux status", setup: "./labctl linux profile use development\n./labctl linux start --wait", where: "linux-lab" },
   ios: { check: "./labctl ios status", setup: "./labctl ios profile use development\n./labctl ios start --wait", where: "ios-lab" },
   source: { check: "./labctl source doctor", setup: "./labctl source setup", where: "source-lab" },
@@ -490,11 +491,11 @@ function LiveLabPage({ lab: labId }: { lab: LabId }) {
   const ref = REFERENCE[labId];
   // The ready iOS Simulator gets a device frame panel instead of plain start/stop buttons.
   const simulator = labId === "ios" && lab?.provider === "native-macos" && lab.state === "ready";
-  // Native host app monitoring is useful even before the WSL2-backed Windows VM is set up.
-  const showWindowsApps =
-    import.meta.env.PUBLIC_SITE_MODE !== "pages" && labId === "windows" && host?.os === "windows";
   // The ready macOS Lab gets the floating app mirror for the windows on this Mac.
   const appMirror = labId === "macos" && lab?.provider === "native-macos" && lab.state === "ready";
+  // The Windows Apps Lab panel reads the desktop directly; it is mounted only locally on Windows hosts.
+  const showWinAppsPanel =
+    import.meta.env.PUBLIC_SITE_MODE !== "pages" && labId === "winapps";
   // Every tracked prerequisite is found: the card would only repeat success badges, so it yields
   // its half of the row to the actions. Anything missing keeps the full status list visible.
   const requirements = lab?.requirements ?? [];
@@ -544,7 +545,7 @@ function LiveLabPage({ lab: labId }: { lab: LabId }) {
                 </div>
               )}
 
-              {showWindowsApps ? <WindowsAppsPanel /> : null}
+              {showWinAppsPanel ? <WinAppsPanel /> : null}
 
               {request ? (
                 <PlanPanel

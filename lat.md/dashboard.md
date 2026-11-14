@@ -42,15 +42,14 @@ after ten minutes) do clicks land immediately through
 `/api/labs/macos/click`, which stays localhost-only like every other POST.
 See [[ios-lab]] for permissions.
 
-## Native Windows applications panel
+## Windows Apps Lab panel
 
-On Windows hosts, [[dashboard/src/views/windows-apps.tsx]] polls the read-only
-`/api/labs/windows/apps` endpoint. [[console/windows_apps.py]] queries visible
-desktop applications in the current user session with PowerShell, validates the
-JSON, and identifies applications by PID plus process start time. The panel
-shows name, PID, title, status, memory, total CPU time and start time; it is
-mounted only locally and only when the host reports Windows, is separate from
-the WSL2-backed VM lifecycle, and does not offer process control.
+On Windows hosts, the new `winapps` lab serves a read-only desktop mirror through
+`/api/labs/winapps/apps` and `/api/labs/winapps/apps/<hwnd>/screenshot`. The
+backend uses ctypes to enumerate visible, captioned top-level windows and
+captures one window with `PrintWindow(PW_RENDERFULLCONTENT)`. The panel shows
+the selected window and its dimensions; it is mounted only locally, is separate
+from the WSL2-backed VM lifecycle, and does not offer input control.
 
 ## UX readiness
 

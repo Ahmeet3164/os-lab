@@ -113,7 +113,7 @@ def test_artifacts_cannot_escape_folder(web_server):
 def test_host_reports_every_lab(web_server):
     data = json.loads(urllib.request.urlopen(f"{web_server}/api/host").read().decode("utf-8"))
     assert data["host"]["os"]
-    assert [lab["id"] for lab in data["labs"]] == ["android", "windows", "linux", "ios", "macos", "source"]
+    assert [lab["id"] for lab in data["labs"]] == ["android", "windows", "winapps", "linux", "ios", "macos", "source"]
     for lab in data["labs"]:
         assert lab["state"] in ("ready", "needs-setup", "unavailable")
 
@@ -124,17 +124,17 @@ def test_health_capabilities_are_served_by_console(web_server):
     assert any(item.get("lab") == "ios" for group in data["groups"] for item in group["items"])
 
 
-def test_windows_apps_endpoint_serves_the_read_only_inventory(web_server, monkeypatch):
+def test_winapps_endpoint_serves_the_read_only_inventory(web_server, monkeypatch):
     import web_ui
 
-    fixture = {"available": True, "apps": [], "provider": "native-windows"}
-    monkeypatch.setattr(web_ui.windows_apps, "inventory", lambda: fixture)
-    data = json.loads(urllib.request.urlopen(f"{web_server}/api/labs/windows/apps").read().decode("utf-8"))
+    fixture = {"available": True, "windows": [], "reason": None}
+    monkeypatch.setattr(web_ui.winapps, "winapps_windows", lambda: fixture)
+    data = json.loads(urllib.request.urlopen(f"{web_server}/api/labs/winapps/apps").read().decode("utf-8"))
     assert data == fixture
 
-    monkeypatch.setattr(web_ui, "windows_apps", None)
+    monkeypatch.setattr(web_ui, "winapps", None)
     try:
-        status = urllib.request.urlopen(f"{web_server}/api/labs/windows/apps").status
+        status = urllib.request.urlopen(f"{web_server}/api/labs/winapps/apps").status
     except urllib.error.HTTPError as e:
         status = e.code
     assert status == 501
