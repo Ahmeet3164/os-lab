@@ -339,41 +339,51 @@ lives in [[cleanup-lab/PLAN-cleaner-widgets.md]].
 ### Widget snapshot (CLW-01/02)
 
 [[cleanup-lab/engine/cleanup_lab/widget.py]] folds existing engine payloads
-(home-volume disk numbers, the latest finished scan, history reclaim totals,
-the monitor's schedule and warnings, bookmark flag counts, the FDA probe)
-into one typed, path-free snapshot. It never creates the App Group container
-(`group.com.keyvanarasteh.oslab`); `OSLAB_WIDGET_GROUP_DIR` is the test
-seam, and a machine without the container publishes nothing, honestly.
-`GET /api/cleanup/widget` builds and publishes in one call.
+into one typed, path-free snapshot and publishes it into the macOS App
+Group container.
+
+The fold covers home-volume disk numbers, the latest finished scan, history
+reclaim totals, the monitor's schedule and warnings, bookmark flag counts
+and the FDA probe. The container (`group.com.keyvanarasteh.oslab`) is never
+created; `OSLAB_WIDGET_GROUP_DIR` is the test seam, and a machine without
+the container publishes nothing, honestly. `GET /api/cleanup/widget` builds
+and publishes in one call.
 
 ### Publishing (CLW-04)
 
-The console republishes the snapshot after job completions (one hook in the
-job store's spawn wrapper, tolerating rootless workers), monitor ticks and
-evaluations, bookmark and custom-entry mutations, and monitor config saves.
-The write is atomic (temp file + `os.replace`, 0600); the widget re-reads
-the file per timeline build, so a corrupt write is never observable.
+The console republishes the snapshot after job completions, monitor ticks
+and the mutating handlers.
+
+The job hook lives once in the spawn wrapper (tolerating rootless workers);
+monitor ticks, evaluations, bookmark and custom-entry mutations and monitor
+config saves refresh it too. The write is atomic (temp file +
+`os.replace`, 0600); the widget re-reads the file per timeline build, so a
+corrupt write is never observable.
 
 ### Desktop app (CLW-03/05/06)
 
 [[app/widget]] builds two macOS targets with xcodegen + xcodebuild: the
-WidgetKit extension (small/medium/large layouts in the dashboard's token
-mirror; macOS 14+, so older hosts simply never load it) and
-`OSLabWidgetReloader.framework`, whose `@objc` class the Tauri host
-dlopen's from `Contents/Frameworks` to call WidgetCenter. The intent writes
-a timestamped request file; the host consumes it once on window focus with
-a 120-second max age, then drives `window.__oslabQuickClean`, which follows
-the dashboard's plan → confirm → run flow. `oslab://` deep links register
-through tauri-plugin-deep-link and land as whitelisted routes in
-`window.__oslabNavigate` (tab ids or overview section ids).
+WidgetKit extension and `OSLabWidgetReloader.framework`.
+
+The extension renders small/medium/large layouts in the dashboard's token
+mirror (macOS 14+, so older hosts simply never load it). The framework's
+`@objc` class is dlopen'd by the Tauri host from `Contents/Frameworks` to
+call WidgetCenter. The intent writes a timestamped request file; the host
+consumes it once on window focus with a 120-second max age, then drives
+`window.__oslabQuickClean`, which follows the dashboard's plan → confirm →
+run flow. `oslab://` deep links register through tauri-plugin-deep-link and
+land as whitelisted routes in `window.__oslabNavigate` (tab ids or overview
+section ids).
 
 ### Release embedding (CLW-08/09)
 
 `app/scripts/release-mac.sh` builds the widget products first, embeds them
-(`Contents/PlugIns` + `Contents/Frameworks`), re-signs appex → framework →
-app with the App Group entitlement and hardened runtime, regenerates and
-re-signs the updater tar.gz, re-notarizes the app, and verifies the nested
-code and entitlement. Pull-request dry runs compile the widget targets.
+and rebuilds the app's seal.
+
+After the embed it re-signs appex → framework → app with the App Group
+entitlement and hardened runtime, regenerates and re-signs the updater
+tar.gz, re-notarizes the app, and verifies the nested code and entitlement.
+Pull-request dry runs compile the widget targets.
 
 ## Dashboard pages
 
