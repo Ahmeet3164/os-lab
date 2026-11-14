@@ -227,8 +227,38 @@ dashboard e2e for the Widgets section with mocked snapshot payloads.
 4. Should the launcher `app/ui` also gain a "Widgets" explainer, or does the
    dashboard surface suffice?
 
-## Implementation status
+## Implementation status (2026-11-15)
 
-Planning only — nothing implemented yet. The worktree is
-`/Volumes/Projects/iQ/os-lab-worktrees/cleaner-widgets`, branch
-`feat/cleaner-widgets` off `master` (`cf1adf7c`, the 0.3.7 release merge).
+Implemented on `feat/cleaner-widgets` (PR #226), commits up to the docs:
+
+- **CLW-01/02/04** — `cleanup_lab/widget.py` (14 tests), `GET /api/cleanup/widget`
+  + publish hooks (3 console tests). Committed as `7b379228` + `89d0d64a`.
+- **CLW-10/11/13** — dashboard WidgetsCard, overview card, `__oslabNavigate` /
+  `__oslabQuickClean` globals, 27 strings × 7 locales, `cleanup-widgets.spec.ts`
+  (5 tests). Commit `fd58b8d6`.
+- **CLW-03/04/05/06/07** — `app/widget` Swift targets (appex macOS 14+,
+  reloader framework macOS 12), Rust bridge + deep links + entitlements.
+  Commit `84c0a0416`.
+- **CLW-08/09** — release-mac.sh embed/re-sign/re-notarize/updater rebuild +
+  PR dry-run widget compile. Commits `105738e45`, `0e6c7ffbb`.
+- **CLW-12** — lat.md, README, STATUS, VERIFY, roadmap, this status. This commit.
+
+Deviations from the plan, honestly:
+
+1. **macOS 14 for the appex, not 13** — the AppIntents `Button(intent:)` needs
+   macOS 14 (the plan assumed 13). On macOS 12/13 hosts the system never loads
+   the extension; the app itself keeps macOS 12.
+2. **macOS targets only, confirmed** — no iOS accessory families shipped
+   (`#if os(iOS)` noted, not ported).
+3. **The purgeable segment is not in the widget snapshot** — the widget's disk
+   gauge uses used%; purgeable stays on the dashboard hero, since probing it
+   per publish would run diskutil on every monitor tick.
+4. **Reload via an embedded framework instead of swift-rs** — one @objc class
+   dlopen'd from Contents/Frameworks; a missing framework degrades to the
+   extension's 15-minute policy (plan's documented fallback).
+5. **Quick-clean runs immediately on intent** — open question 2 resolved to
+   the reference semantics; the review dialog still shows the built plan.
+
+Open question 1 (App Group reachability from the unsandboxed host) stays
+honest: the console's `capable` probe drives everything, the dashboard states
+the idle reason, and the first signed release verifies it for real.
