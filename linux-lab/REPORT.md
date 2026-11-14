@@ -6,3 +6,4 @@ OS-10 görevi kapsamında Linux dosya sistemindeki temel dizinleri (/, /home, /e
 - Nokta (.) ile başlayan gizli dosyaların kullanım amacı ve ls -a komutu ile görüntülenmesi öğrenildi.
 - Script oluşturma, chmod +x ile çalıştırma izni verme,echo ve ls ile script yazma öğrenildi.
 - GitHub üzerinde fork, branch oluşturma, git status / add / commit / push ve Pull Request açma iş akışı deneyimlendi.
+- Tüm doğrulama ve sözdizimi kontrolleri tamamlandı.
