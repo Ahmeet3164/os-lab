@@ -42,7 +42,7 @@ export const REQUIRED = [
   "win-lab/scripts/setup-ubuntu.sh", "win-lab/docker-compose.yml",
   "win-lab/scripts/preflight.sh", "win-lab/scripts/backup.sh",
   "win-lab/scripts/install-service.sh", "win-lab/scripts/uninstall-service.sh", "win-lab/.env.example",
-  "winapps", "console/winapps.py",
+  "winapps/.env.example", "console/winapps.py",
   "linux-lab/scripts/setup-ubuntu.sh", "linux-lab/docker-compose.yml",
   "linux-lab/scripts/preflight.sh", "linux-lab/scripts/backup.sh",
   "linux-lab/scripts/install-service.sh", "linux-lab/scripts/uninstall-service.sh", "linux-lab/.env.example",
