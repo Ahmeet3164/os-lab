@@ -78,6 +78,21 @@ export interface LabRequest {
   clickPid?: number;
   clickX?: number;
   clickY?: number;
+  inputKind?: MacInputKind;
+  inputText?: string;
+  inputKey?: string;
+  elementId?: string;
+  elementKind?: "click" | "type";
+  elementSession?: string;
+  elementBundle?: string;
+  elementPid?: number;
+  elementWindowId?: number;
+  elementPath?: string;
+  elementIdentity?: string;
+  axAction?: string;
+  elementValue?: string;
+  scrollDirection?: "up" | "down";
+  scrollPages?: number;
 }
 export interface SetupDetails {
   dependencies: string[];
@@ -162,6 +177,8 @@ export interface MacWindow {
   y: number;
   width: number;
   height: number;
+  /** Backing scale of the display the window sits on (MIR-03); CGWindowBounds stay points. */
+  scale: number;
 }
 export interface MacAppsInfo {
   available: boolean;
@@ -176,16 +193,93 @@ export interface MacElement {
   y: number;
   w: number;
   h: number;
+  /** Stable WebDriver id, present on deep-inspect (mac2) elements. */
+  elementId?: string;
+  name?: string;
+  /** Child-index path + identity hash from the native AX helper (MIR-09). */
+  path?: string;
+  identity?: string;
+  /** Rich observation (MIR-08): value, placeholder, state and advertised AX actions. */
+  value?: string | null;
+  placeholder?: string | null;
+  enabled?: boolean;
+  focused?: boolean;
+  actions?: string[];
+  /** Where a changed element used to be (diff overlay, MIR-02). */
+  movedFrom?: { x: number; y: number };
+}
+export interface MacElementDiff {
+  added: MacElement[];
+  changed: MacElement[];
+  removed: MacElement[];
 }
 export interface MacElementsInfo {
   windowId: number;
   app: string;
   bounds: { x: number; y: number; width: number; height: number };
   elements: MacElement[];
+  revision: string;
+  diff: MacElementDiff;
+  /** Which engine served the read (MIR-09): native helper or the osascript fallback. */
+  engine: "ax-helper" | "osascript" | "mac2";
+  trimmed: boolean;
+  focusedPath: string | null;
+}
+export interface MacAxWindow {
+  index: number;
+  rect?: { x: number; y: number; w: number; h: number };
+  title?: string;
+  subrole?: string;
+  modal?: boolean;
+  main?: boolean;
+  focused?: boolean;
+  minimized?: boolean;
+}
+export interface MacMenuNode {
+  role?: string;
+  title?: string;
+  path?: string;
+  enabled?: boolean;
+  actions?: string[];
+  children?: MacMenuNode[];
 }
 export interface MacControlState {
   armed: boolean;
   expiresInSec: number;
+}
+export type MacInputKind = "double" | "right" | "type" | "key" | "paste" | "scroll";
+export interface MacSessionsState {
+  appium: boolean;
+  sessions: { bundleId: string; sessionId: string; startedAt: number }[];
+}
+export interface MacDeepElements {
+  bundleId: string;
+  sessionId: string;
+  window: { x: number; y: number };
+  elements: (MacElement & { elementId: string })[];
+}
+export interface MacAuditRow {
+  time: number;
+  kind: string;
+  app?: string;
+  windowId?: number;
+  title?: string;
+  x?: number;
+  y?: number;
+  key?: string;
+  textLength?: number;
+  action?: string;
+  inputKind?: string;
+  bundleId?: string;
+  elementId?: string;
+  token?: string;
+  ok?: boolean;
+  reason?: string;
+  thumbnail?: string | null;
+}
+export interface MacAuditState {
+  recording: boolean;
+  rows: MacAuditRow[];
 }
 export interface Report {
   name: string;
@@ -371,6 +465,7 @@ const post = <T>(path: string, body: unknown = {}) =>
     headers: { "Content-Type": "application/json", "X-OSLab": "1" },
     body: JSON.stringify(body)
   });
+const del = <T>(path: string) => call<T>(path, { method: "DELETE", headers: { "X-OSLab": "1" } });
 
 export interface ContentState {
   installed: boolean;
@@ -450,11 +545,38 @@ export const api = {
   iosScreenshotUrl: "/api/labs/ios/screenshot",
   macosApps: () => call<MacAppsInfo>("/api/labs/macos/apps"),
   macosAppScreenshotUrl: (windowId: number) => `/api/labs/macos/apps/${windowId}/screenshot`,
-  macosElements: (windowId: number) => call<MacElementsInfo>(`/api/labs/macos/apps/${windowId}/elements`),
+  macosElements: (windowId: number, revision?: string) =>
+    call<MacElementsInfo>(`/api/labs/macos/apps/${windowId}/elements${revision ? `?revision=${encodeURIComponent(revision)}` : ""}`),
+  macosAppStreamUrl: (windowId: number, fps: number) => `/api/labs/macos/apps/${windowId}/stream?fps=${fps}`,
   macosControl: () => call<MacControlState>("/api/labs/macos/control"),
-  macosControlArm: (armed: boolean) => post<MacControlState>("/api/labs/macos/control", { armed }),
+  macosControlArm: (armed: boolean, owner?: string) =>
+    post<MacControlState>("/api/labs/macos/control", { armed, owner }),
   macosClick: (pid: number, x: number, y: number) =>
     post<{ ok: boolean; pid: number; x: number; y: number }>("/api/labs/macos/click", { pid, x, y }),
+  macosInput: (input: { pid: number; x: number; y: number; kind: MacInputKind; text?: string; key?: string;
+                         owner?: string; confirm?: boolean }) =>
+    post<{ ok: boolean; actionSent?: boolean; verify?: Record<string, unknown> }>("/api/labs/macos/input", input),
+  macosSessions: () => call<MacSessionsState>("/api/labs/macos/session"),
+  macosSessionOpen: (target: { bundleId?: string; app?: string }) =>
+    post<{ bundleId: string; sessionId: string }>("/api/labs/macos/session", target),
+  macosSessionElements: (bundleId: string) =>
+    call<MacDeepElements>(`/api/labs/macos/session/${encodeURIComponent(bundleId)}/elements`),
+  macosSessionAction: (bundleId: string, input: { kind: "click" | "type"; elementId: string; text?: string }) =>
+    post<{ ok: boolean }>(`/api/labs/macos/session/${encodeURIComponent(bundleId)}/action`, input),
+  macosSessionClose: (bundleId: string) =>
+    del<{ closed: boolean }>(`/api/labs/macos/session/${encodeURIComponent(bundleId)}`),
+  macosAudit: () => call<MacAuditState>("/api/labs/macos/audit"),
+  macosAuditUrl: "/api/labs/macos/audit.json",
+  macosStop: () => post<{ ok: boolean; sessionsClosed: string[] }>("/api/labs/macos/stop"),
+  macosAxWindows: (pid: number) => call<{ windows: MacAxWindow[] }>(`/api/labs/macos/apps/${pid}/windows`),
+  macosMenubar: (pid: number) => call<{ menubar: MacMenuNode }>(`/api/labs/macos/apps/${pid}/menubar`),
+  macosFocused: (pid: number) => call<{ focused: MacElement | null }>(`/api/labs/macos/apps/${pid}/focused`),
+  macosAxRead: (input: { pid: number; path: string; identity?: string; attr?: string; windowId?: number }) =>
+    post<{ value: string | null }>("/api/labs/macos/element/read", input),
+  macosAxSet: (input: { pid: number; path: string; identity?: string; value: string; windowId?: number }) =>
+    post<{ ok: boolean; actionSent: boolean; verify?: Record<string, unknown> }>("/api/labs/macos/element/set", input),
+  macosAxPerform: (input: { pid: number; path: string; identity?: string; action: string; windowId?: number }) =>
+    post<{ ok: boolean; actionSent: boolean }>("/api/labs/macos/element/perform", input),
   plan: (request: LabRequest) => post<{ plan: LabPlan; token: string }>("/api/labs/plan", { request }),
   start: (request: LabRequest, token: string) => post<LabJob>("/api/labs/start", { request, token }),
   jobs: () => call<{ jobs: LabJob[] }>("/api/jobs"),

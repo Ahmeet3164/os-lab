@@ -204,6 +204,8 @@ Run from the checkout root as `make -C ios-lab TARGET [VARIABLE=value ...]`.
 - `mac-app-smoke` — macOS host: run one mac2 session that activates Finder on this Mac
 - `mac-app-repl` — macOS host: interactive mac2 REPL for macOS apps (APP=<bundle-id>, default Finder)
 - `mac-status` — macOS host: show Xcode, booted simulators and Appium state
+- `mac-ax-helper` — macOS host: compile the native AX helper for rich element reads (MIR-09)
+- `mac-mcp` — macOS host: run the guarded MCP server for computer-use agents (MIR-12)
 
 ## Make targets: `android-lab/lab/Makefile`
 
