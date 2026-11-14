@@ -124,6 +124,22 @@ def test_health_capabilities_are_served_by_console(web_server):
     assert any(item.get("lab") == "ios" for group in data["groups"] for item in group["items"])
 
 
+def test_windows_apps_endpoint_serves_the_read_only_inventory(web_server, monkeypatch):
+    import web_ui
+
+    fixture = {"available": True, "apps": [], "provider": "native-windows"}
+    monkeypatch.setattr(web_ui.windows_apps, "inventory", lambda: fixture)
+    data = json.loads(urllib.request.urlopen(f"{web_server}/api/labs/windows/apps").read().decode("utf-8"))
+    assert data == fixture
+
+    monkeypatch.setattr(web_ui, "windows_apps", None)
+    try:
+        status = urllib.request.urlopen(f"{web_server}/api/labs/windows/apps").status
+    except urllib.error.HTTPError as e:
+        status = e.code
+    assert status == 501
+
+
 def test_scope_endpoint_reports_the_declared_scope(web_server, tmp_path, monkeypatch):
     path = tmp_path / "scope.json"
     monkeypatch.setenv("OSLAB_SCOPE_FILE", str(path))

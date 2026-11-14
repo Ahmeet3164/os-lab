@@ -51,6 +51,21 @@ The first boot downloads media and installs Windows automatically. Expect
 Connect over RDP (`make rdp` prints the details) or use the web viewer for the
 initial setup.
 
+## Native host application monitor
+
+On a real Windows host, the Windows Lab page adds a **read-only** monitor for
+visible desktop applications in the current user session: process name, PID,
+window title, start time, working-set memory, total CPU time and responsiveness.
+This is a host capability, not the Windows VM; it does not replace WSL2/VM
+readiness and it is intentionally available before the VM is set up.
+
+The implementation lives in [`console/windows_apps.py`](../console/windows_apps.py).
+It uses PowerShell's built-in process query interface, bounds every query,
+returns structured JSON, and never offers process control, command-line values
+or arbitrary shell access. Public Pages does not mount or call this panel.
+A process is identified by PID plus start time, so Windows reusing a PID cannot
+replace the selected application.
+
 ## Make targets
 
 | Target | What it does |

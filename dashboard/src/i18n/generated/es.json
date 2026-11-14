@@ -2370,5 +2370,18 @@
   "Automation": "Automatización",
   "Install idb": "Instalar idb",
   "Stack": "Stack",
-  "idb": "idb"
+  "idb": "idb",
+  "Applications on this PC": "Aplicaciones en este PC",
+  "Native, read-only monitoring of visible desktop applications in your Windows session. This is separate from the Windows VM.": "Supervisión nativa de solo lectura de las aplicaciones de escritorio visibles en su sesión de Windows. Es independiente de la VM Windows.",
+  "No visible desktop applications were found.": "No se encontraron aplicaciones de escritorio visibles.",
+  "Some running processes could not be read; the list is partial.": "Algunos procesos en ejecución no pudieron leerse; la lista es parcial.",
+  "Select an application to see its details.": "Seleccione una aplicación para ver sus detalles.",
+  "The selected application is no longer running.": "La aplicación seleccionada ya no se está ejecutando.",
+  "Process": "Proceso",
+  "PID": "PID",
+  "Window title": "Título de la ventana",
+  "Status": "Estado",
+  "Started": "Iniciado",
+  "Not responding": "No responde",
+  "Updated": "Actualizado"
 }

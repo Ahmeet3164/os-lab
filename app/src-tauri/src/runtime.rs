@@ -37,6 +37,7 @@ const BUNDLE_FILES: &[&str] = &[
     "console/source_manifest_specs.json",
     "console/source_pipeline.json",
     "console/content.py",
+    "console/windows_apps.py",
     "dashboard/dist/index.html",
     "docs/legal/PRIVACY.md",
     "android-lab/lab/scripts/setup-ubuntu.sh",

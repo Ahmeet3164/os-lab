@@ -2370,5 +2370,18 @@
   "Automation": "Otomasyon",
   "Install idb": "idb kur",
   "Stack": "Yığın",
-  "idb": "idb"
+  "idb": "idb",
+  "Applications on this PC": "Bu bilgisayardaki uygulamalar",
+  "Native, read-only monitoring of visible desktop applications in your Windows session. This is separate from the Windows VM.": "Windows oturumunuzdaki görünür masaüstü uygulamalarının salt okunur yerel izlemesi. Bu, Windows sanal makinesinden ayrıdır.",
+  "No visible desktop applications were found.": "Görünür masaüstü uygulaması bulunamadı.",
+  "Some running processes could not be read; the list is partial.": "Bazı çalışan süreçler okunamadı; liste kısmi.",
+  "Select an application to see its details.": "Ayrıntıları görmek için bir uygulama seçin.",
+  "The selected application is no longer running.": "Seçilen uygulama artık çalışmıyor.",
+  "Process": "Süreç",
+  "PID": "PID",
+  "Window title": "Pencere başlığı",
+  "Status": "Durum",
+  "Started": "Başlangıç",
+  "Not responding": "Yanıt vermiyor",
+  "Updated": "Güncellendi"
 }

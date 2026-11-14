@@ -52,6 +52,10 @@ try:
     import cleanup_api  # noqa: E402  (console/cleanup_api.py: Cleanup Lab readiness and, later, scan/clean)
 except ImportError:
     cleanup_api = None
+try:
+    import windows_apps  # noqa: E402  (console/windows_apps.py: read-only native Windows app inventory)
+except ImportError:
+    windows_apps = None
 ARTIFACTS_DIR = os.path.join(SCRIPT_DIR, "artifacts")
 SCRIPTS_DIR = os.path.join(SCRIPT_DIR, "scripts")
 
@@ -341,6 +345,12 @@ class LabHttpHandler(BaseHTTPRequestHandler):
             self._json(200, oslab.ios_simulator(REPO_ROOT))
         elif len(parts) == 4 and parts[:2] == ["api", "labs"] and parts[2] == "ios" and parts[3] == "screenshot":
             self._send_bytes(200, oslab.ios_screenshot(), "image/png", cache="no-store")
+        elif len(parts) == 4 and parts[:2] == ["api", "labs"] and parts[2] == "windows" and parts[3] == "apps":
+            # Native Windows session monitoring is read-only and independent of the Windows VM lifecycle.
+            if windows_apps is None:
+                self._json(501, {"error": "The Windows application monitor module (console/windows_apps.py) is not installed"})
+                return
+            self._json(200, windows_apps.inventory())
         elif path == "/api/jobs":
             self._json(200, {"jobs": JOBS.list()})
         elif len(parts) == 3 and parts[:2] == ["api", "jobs"]:

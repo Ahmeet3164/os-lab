@@ -26,6 +26,7 @@ requests of its own.
 | Host report: OS, CPU, memory, disk, KVM, WSL distributions, installed tools | Console memory | Recomputed every few seconds; not written to disk |
 | Lab jobs: command, output (configured credentials are redacted), exit status | Console memory; Source Lab also journals under private storage `control/jobs.json` | The 50 most recent; Source records remain until the operator removes them |
 | Android workbench log | Console memory | Last 1,000 lines, until cleared or the console stops |
+| Visible Windows desktop application inventory (current session: process name, PID, window title, start time, memory, CPU time, responsiveness) | Console memory | Recomputed for each read-only polling request; not written to disk |
 | APKs you upload | `android-lab/lab/apks/` | Until you delete them |
 | Analysis results, reports, traffic captures | `android-lab/lab/artifacts/` and each lab's folders | Until you delete them (`make clean` for Android) |
 | Source Lab analysis reports, cloned workspaces, merged lab extensions and runtime sessions | `source-lab/storage/` by default, or the operator-configured storage root | Until you delete them; the project does not receive them |

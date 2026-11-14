@@ -64,8 +64,11 @@ ensure_pytest() {
       printf 'creating test virtualenv at .venv-test ...\n'
       "$PY" -m venv "$venv" || { bad "could not create venv"; return 1; }
     fi
-    # shellcheck disable=SC1091
-    . "$venv/bin/activate"
+    # Windows-created venvs use Scripts/, not bin/.
+    local activate="$venv/bin/activate"
+    case "$(uname -s)" in MINGW*|MSYS*|CYGWIN*) activate="$venv/Scripts/activate" ;; esac
+    # shellcheck disable=SC1090
+    . "$activate"
     PY="$(command -v python)"
     "$PY" -m pip install --quiet --upgrade pip
     "$PY" -m pip install --quiet pytest requests

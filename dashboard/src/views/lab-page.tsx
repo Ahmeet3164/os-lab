@@ -24,6 +24,7 @@ import { TopBar } from "../shell/top-bar";
 import { ShellSnippet } from "../apk-lab/components";
 import { Badge, Empty, EndpointList, Field, PageHead, Section, Skeleton, Status } from "../components/ui";
 import { SimulatorPanel } from "./ios-simulator";
+import { WindowsAppsPanel } from "./windows-apps";
 import { stateBadge } from "./host-page";
 import {
   ago,
@@ -484,6 +485,9 @@ function LiveLabPage({ lab: labId }: { lab: LabId }) {
   const ref = REFERENCE[labId];
   // The ready iOS Simulator gets a device frame panel instead of plain start/stop buttons.
   const simulator = labId === "ios" && lab?.provider === "native-macos" && lab.state === "ready";
+  // Native host app monitoring is useful even before the WSL2-backed Windows VM is set up.
+  const showWindowsApps =
+    import.meta.env.PUBLIC_SITE_MODE !== "pages" && labId === "windows" && host?.os === "windows";
   // Every tracked prerequisite is found: the card would only repeat success badges, so it yields
   // its half of the row to the actions. Anything missing keeps the full status list visible.
   const requirements = lab?.requirements ?? [];
@@ -524,6 +528,8 @@ function LiveLabPage({ lab: labId }: { lab: LabId }) {
                   ))}
                 </div>
               )}
+
+              {showWindowsApps ? <WindowsAppsPanel /> : null}
 
               {request ? (
                 <PlanPanel

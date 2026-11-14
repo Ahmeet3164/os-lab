@@ -61,6 +61,11 @@ frame, and read-only `/api/labs/ios/simulator` and
 `/api/labs/ios/screenshot` endpoints feed the panel's device list and live
 screen.
 
+On Windows hosts, [[dashboard]] adds a separate, read-only native application
+monitor for the current user session through [[console/windows_apps.py]].
+It is a host capability rather than the Windows VM lifecycle, works before
+WSL2/VM readiness, and public Pages never mounts or calls it.
+
 ## Research
 
 The top iOS-in-Docker options, networking and operational limits.

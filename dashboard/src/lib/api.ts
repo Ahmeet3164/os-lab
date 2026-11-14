@@ -150,6 +150,29 @@ export interface IosSimulatorInfo {
   booted: IosSimulatorDevice[];
   configuredDevice: string | null;
 }
+/** One visible desktop application in the current Windows session (console/windows_apps.py). */
+export interface WindowsApp {
+  /** Stable PID + process start-time identity; a reused PID never replaces a closed app. */
+  id: string;
+  pid: number;
+  name: string;
+  title: string;
+  /** Unix epoch milliseconds. */
+  startedAt: number;
+  memoryBytes: number | null;
+  cpuSeconds: number | null;
+  responding: boolean;
+}
+export interface WindowsAppsInfo {
+  available: boolean;
+  reason: string | null;
+  provider: string;
+  sessionId: number | null;
+  checkedAt: number;
+  partial: boolean;
+  skipped: number;
+  apps: WindowsApp[];
+}
 export interface Report {
   name: string;
   url: string;
@@ -302,6 +325,7 @@ export const api = {
   monitor: (lab: LabId) => call<LabMonitor>(`/api/labs/${lab}/monitor`),
   iosSimulator: () => call<IosSimulatorInfo>(`/api/labs/ios/simulator`),
   iosScreenshotUrl: "/api/labs/ios/screenshot",
+  windowsApps: () => call<WindowsAppsInfo>("/api/labs/windows/apps"),
   plan: (request: LabRequest) => post<{ plan: LabPlan; token: string }>("/api/labs/plan", { request }),
   start: (request: LabRequest, token: string) => post<LabJob>("/api/labs/start", { request, token }),
   jobs: () => call<{ jobs: LabJob[] }>("/api/jobs"),

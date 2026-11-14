@@ -2370,5 +2370,18 @@
   "Automation": "اتوماسیون",
   "Install idb": "نصب idb",
   "Stack": "استک",
-  "idb": "idb"
+  "idb": "idb",
+  "Applications on this PC": "برنامه‌ها روی این رایانه",
+  "Native, read-only monitoring of visible desktop applications in your Windows session. This is separate from the Windows VM.": "پایش بومی فقط-خواندنی برنامه‌های دسکتاپ قابل مشاهده در نشست ویندوز شما. این از ماشین مجازی ویندوز جدا است.",
+  "No visible desktop applications were found.": "هیچ برنامه دسکتاپ قابل مشاهده‌ای پیدا نشد.",
+  "Some running processes could not be read; the list is partial.": "برخی فرایندهای در حال اجرا خوانده نشدند؛ فهرست ناقص است.",
+  "Select an application to see its details.": "برای دیدن جزئیات، یک برنامه انتخاب کنید.",
+  "The selected application is no longer running.": "برنامه انتخاب‌شده دیگر در حال اجرا نیست.",
+  "Process": "فرایند",
+  "PID": "PID",
+  "Window title": "عنوان پنجره",
+  "Status": "وضعیت",
+  "Started": "شروع‌شده",
+  "Not responding": "پاسخ نمی‌دهد",
+  "Updated": "به‌روزشده"
 }

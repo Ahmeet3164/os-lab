@@ -29,6 +29,16 @@ The screen comes from the read-only `/api/labs/ios/simulator` and
 change through the previewed plan flow; the console validates the device
 against `xcrun simctl` (see [[ios-lab]]).
 
+## Native Windows applications panel
+
+On Windows hosts, [[dashboard/src/views/windows-apps.tsx]] polls the read-only
+`/api/labs/windows/apps` endpoint. [[console/windows_apps.py]] queries visible
+desktop applications in the current user session with PowerShell, validates the
+JSON, and identifies applications by PID plus process start time. The panel
+shows name, PID, title, status, memory, total CPU time and start time; it is
+mounted only locally and only when the host reports Windows, is separate from
+the WSL2-backed VM lifecycle, and does not offer process control.
+
 ## UX readiness
 
 [[ux-readiness]] records the dashboard's action, endpoint, and navigation

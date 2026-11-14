@@ -2370,5 +2370,18 @@
   "Automation": "الأتمتة",
   "Install idb": "تثبيت idb",
   "Stack": "المكدس",
-  "idb": "idb"
+  "idb": "idb",
+  "Applications on this PC": "التطبيقات على هذا الكمبيوتر",
+  "Native, read-only monitoring of visible desktop applications in your Windows session. This is separate from the Windows VM.": "مراقبة أصلية للقراءة فقط لتطبيقات سطح المكتب الظاهرة في جلسة ويندوز. وهي منفصلة عن الجهاز الافتراضي لويندوز.",
+  "No visible desktop applications were found.": "لم يتم العثور على تطبيقات سطح المكتب الظاهرة.",
+  "Some running processes could not be read; the list is partial.": "تعذّرت قراءة بعض العمليات الجارية؛ القائمة جزئية.",
+  "Select an application to see its details.": "حدد تطبيقاً لعرض تفاصيله.",
+  "The selected application is no longer running.": "التطبيق المحدد لم يعد قيد التشغيل.",
+  "Process": "العملية",
+  "PID": "PID",
+  "Window title": "عنوان النافذة",
+  "Status": "الحالة",
+  "Started": "بدأ",
+  "Not responding": "لا يستجيب",
+  "Updated": "محدَّث"
 }
