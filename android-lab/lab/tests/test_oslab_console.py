@@ -31,9 +31,13 @@ def states(host):
 
 
 def test_linux_kvm_host_runs_container_labs_but_not_native_mac():
-    assert states(make_host()) == {
+    expected = {
         "android": "ready", "windows": "ready", "linux": "ready", "ios": "ready", "macos": "unavailable", "source": "ready",
+        # Web Lab follows the local engine build, not a VM provider: ready once
+        # the engine binary exists, otherwise unavailable without cargo.
+        "web": "ready" if os.path.isfile(os.path.join(REPO_ROOT, "web-lab", "browser", "target", "release", "weblab")) else "unavailable",
     }
+    assert states(make_host()) == expected
 
 
 def test_missing_kvm_needs_setup_except_android_static():
