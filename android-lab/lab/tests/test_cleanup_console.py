@@ -52,10 +52,15 @@ def clean_jobs(tmp_path, monkeypatch):
     drain()
     cleanup_api.JOBS.jobs.clear()
     cleanup_api.PLANS.plans.clear()
+    # Stop the background monitor thread: a tick that wakes mid-test would
+    # evaluate against the same (fixture) store and race the foreground
+    # evaluate assertions. The next CleanupAPI() constructor restarts it.
+    cleanup_api.MONITOR.stop.set()
     yield
     drain()
     cleanup_api.JOBS.jobs.clear()
     cleanup_api.PLANS.plans.clear()
+    cleanup_api.MONITOR.stop.set()
 
 
 def catalog_cache_target(tmp_path, monkeypatch):
