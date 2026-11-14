@@ -947,3 +947,63 @@ def test_custom_entries_are_validated_once_then_addressed_by_id(monkeypatch, tmp
     with pytest.raises(cleanup_api.CleanupError) as caught:
         api.post("/api/cleanup/custom-entries/remove", {"entryId": "system.user-caches"})
     assert caught.value.status == 400
+
+
+def test_the_widget_endpoint_returns_the_snapshot_and_publishes(tmp_path, monkeypatch):
+    """CLW-02: one read-only fold, published into the (overridden) container."""
+    group = tmp_path / "group"
+    group.mkdir()
+    monkeypatch.setenv("OSLAB_WIDGET_GROUP_DIR", str(group))
+    api = cleanup_api.CleanupAPI(REPO_ROOT)
+    payload = api.get("/api/cleanup/widget", {})
+    assert payload["schemaVersion"] == 1
+    assert payload["platform"] in ("macos", "linux", "windows")
+    assert isinstance(payload["capable"], bool)
+    for section in ("disk", "cleanup", "monitor", "bookmarks", "permissions"):
+        assert section in payload
+    assert payload["status"] in ("cleaning", "scanning", "ready-to-clean", "up-to-date")
+    assert payload["publish"]["published"] is True
+    snapshot = json.loads((group / "widget-snapshot.json").read_text())
+    assert snapshot["schemaVersion"] == payload["schemaVersion"]
+    # No free-form paths beyond the mount point may leak into the file.
+    assert "entryIds" not in json.dumps(snapshot)
+    assert "planId" not in json.dumps(snapshot)
+
+
+def test_the_widget_publishes_honestly_without_a_container(tmp_path, monkeypatch):
+    monkeypatch.delenv("OSLAB_WIDGET_GROUP_DIR", raising=False)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
+    api = cleanup_api.CleanupAPI(REPO_ROOT)
+    payload = api.get("/api/cleanup/widget", {})
+    assert payload["capable"] is False
+    assert payload["publish"]["published"] is False
+    assert payload["publish"]["reason"]
+
+
+def test_the_widget_reflects_a_finished_scan_and_publishes_on_completion(tmp_path, monkeypatch):
+    """CLW-04: the job worker's publish hook writes the file without a poll."""
+    group = tmp_path / "group"
+    group.mkdir()
+    monkeypatch.setenv("OSLAB_WIDGET_GROUP_DIR", str(group))
+    target = catalog_cache_target(tmp_path, monkeypatch)
+    with open(os.path.join(target, "one.bin"), "wb") as handle:
+        handle.write(b"x" * 64)
+    api = cleanup_api.CleanupAPI(REPO_ROOT)
+    job = api.post("/api/cleanup/scan", {"entryIds": ["system.user-caches"], "workers": 1})
+    wait_for(job, "done")
+    # The _spawn hook publishes without any GET — poll the file briefly.
+    deadline = time.time() + 5
+    payload = None
+    while time.time() < deadline:
+        path = group / "widget-snapshot.json"
+        if path.exists():
+            payload = json.loads(path.read_text())
+            if payload.get("lastScan"):
+                break
+        time.sleep(0.05)
+    assert payload and payload["lastScan"], "the finished scan never reached the widget"
+    assert payload["lastScan"]["foundBytes"] == 64
+    assert payload["status"] in ("ready-to-clean", "up-to-date")
+    fetched = api.get("/api/cleanup/widget", {})
+    assert fetched["lastScan"]["foundBytes"] == 64
