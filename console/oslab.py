@@ -126,7 +126,8 @@ MAC_ACTIONS = ["status", "doctor", "setup", "start", "stop", "appium-install", "
 # The macOS Lab automates installed macOS applications through Appium mac2 — no simulator.
 # macos-click, macos-input and macos-element drive the app mirror panel (never plain buttons).
 MACOS_APP_ACTIONS = ["status", "doctor", "setup", "appium-install", "appium-start", "appium-stop", "macos-smoke",
-                     "macos-click", "macos-input", "macos-element", "macos-set-value", "macos-perform"]
+                     "macos-click", "macos-input", "macos-element", "macos-set-value", "macos-perform",
+                     "macos-scroll"]
 
 ACTION_INFO = {
     "csv-merge": ("Join catalogs", "Join operator catalogs into private storage."),
@@ -161,6 +162,7 @@ ACTION_INFO = {
     "macos-element": ("Deep-inspect element action", "Click or type into one element through the open mac2 deep-inspect session for the mirrored app."),
     "macos-set-value": ("Set element value", "Write a value straight into one accessibility element (settable elements only) via the native AX helper."),
     "macos-perform": ("Perform element action", "Run one action the element advertises (e.g. AXPress, AXShowMenu) through the native AX helper."),
+    "macos-scroll": ("Scroll in app", "Scroll the mirrored window vertically at the chosen point (line-based; horizontal is not supported)."),
 }
 
 # On the iOS Lab's native path "start" and "stop" drive the iOS Simulator, not a container stack.
@@ -1136,7 +1138,8 @@ def macos_audit_download() -> bytes:
 
 # The mirror actions that run through the preview → confirm → job pipeline; the armed halves of
 # these (and arm/disarm, sessions) audit themselves where they run.
-_MACOS_MIRROR_ACTIONS = ("macos-click", "macos-input", "macos-element", "macos-set-value", "macos-perform")
+_MACOS_MIRROR_ACTIONS = ("macos-click", "macos-input", "macos-element", "macos-set-value", "macos-perform",
+                         "macos-scroll")
 
 
 def macos_audit_preview(root: str, request: dict, kind: str, token: str | None = None) -> None:
@@ -1156,7 +1159,7 @@ def macos_audit_preview(root: str, request: dict, kind: str, token: str | None =
 # MIR-01: the input family — double-click, right-click, type and press-key — with the same
 # preview → confirm (or armed) pipeline as the single click. Typing never sends Return:
 # newlines are refused here and in the script, and Enter is its own explicit key action.
-_MACOS_INPUT_KINDS = ("double", "right", "type", "key", "paste")
+_MACOS_INPUT_KINDS = ("double", "right", "type", "key", "paste", "scroll")
 _MACOS_INPUT_KEYS = ("tab", "escape", "delete", "forward-delete", "up", "down", "left", "right",
                      "space", "enter", "return")
 _INPUT_TEXT_MAX = 200
@@ -1195,6 +1198,19 @@ def _validated_input(data: dict) -> dict:
             raise PlanError("key must be one of: " + ", ".join(_MACOS_INPUT_KEYS), code="INVALID_ARGS")
         values["key"] = data.get("key")
         values["submitKind"] = "enter" if data.get("key") in ("enter", "return") else None
+    if kind == "scroll":
+        direction = data.get("direction")
+        if direction not in ("up", "down"):
+            raise PlanError("direction must be up or down (horizontal scrolling is not supported)",
+                            code="INVALID_ARGS")
+        try:
+            pages = int(data.get("pages"))
+        except (TypeError, ValueError):
+            raise PlanError("pages must be an integer", code="INVALID_ARGS") from None
+        if not 1 <= pages <= 10:
+            raise PlanError("pages must be 1-10", code="INVALID_ARGS")
+        values["direction"], values["pages"] = direction, pages
+        values["text"] = f"{direction}:{pages}"
     return values
 
 
@@ -1238,8 +1254,10 @@ def macos_control_input(root: str, data: dict) -> dict:
     """One immediate double-click, right-click, typed text, key press or paste while armed."""
     values = _validated_input(data)
     args = ["input", str(values["pid"]), str(values["x"]), str(values["y"]), values["kind"]]
-    if values["kind"] in ("type", "paste", "key"):
-        args.append(values["text"] if values["kind"] != "key" else values["key"])
+    if values["kind"] in ("type", "paste", "scroll"):
+        args.append(values["text"])
+    elif values["kind"] == "key":
+        args.append(values["key"])
     return _run_control_script(root, args, values)
 
 
@@ -1885,7 +1903,8 @@ def plan(root: str, request: dict, host: dict | None = None) -> dict:
     allowed = {"lab", "action", "profile", "cpus", "ram", "disk", "device", "wslDistro", "backup",
                "clickPid", "clickX", "clickY", "inputKind", "inputText", "inputKey",
                "elementId", "elementKind", "elementSession", "elementBundle",
-               "elementPid", "elementPath", "elementIdentity", "axAction", "elementValue", "elementWindowId"}
+               "elementPid", "elementPath", "elementIdentity", "axAction", "elementValue", "elementWindowId",
+               "scrollDirection", "scrollPages"}
     unknown = set(request) - allowed
     if unknown:
         raise PlanError("Unknown request fields: " + ", ".join(sorted(unknown)))
@@ -1920,9 +1939,9 @@ def plan(root: str, request: dict, host: dict | None = None) -> dict:
         if request.get(key) not in (None, "") and action != "resize":
             raise PlanError("Resource parameters are only accepted by resize")
     click = {"pid": request.get("clickPid"), "x": request.get("clickX"), "y": request.get("clickY")}
-    if any(v not in (None, "") for v in click.values()) and action not in ("macos-click", "macos-input"):
+    if any(v not in (None, "") for v in click.values()) and action not in ("macos-click", "macos-input", "macos-scroll"):
         raise PlanError("Click coordinates are only accepted by the app mirror actions")
-    if action in ("macos-click", "macos-input"):
+    if action in ("macos-click", "macos-input", "macos-scroll"):
         for name, value in click.items():
             try:
                 if not 0 <= int(value) <= 100000:
@@ -1930,6 +1949,13 @@ def plan(root: str, request: dict, host: dict | None = None) -> dict:
             except (TypeError, ValueError):
                 raise PlanError(f"click{name.capitalize()} must be a screen coordinate") from None
             click[name] = int(value)
+    scroll_values: dict = {}
+    if any(request.get(k) not in (None, "") for k in ("scrollDirection", "scrollPages")) and action != "macos-scroll":
+        raise PlanError("Scroll parameters are only accepted by the app mirror scroll action")
+    if action == "macos-scroll":
+        scroll_values = _validated_input({"pid": click["pid"], "x": click["x"], "y": click["y"],
+                                          "kind": "scroll", "direction": request.get("scrollDirection"),
+                                          "pages": request.get("scrollPages")})
     input_values: dict = {}
     # inputText is the shared typed-text payload of macos-input and macos-element; the kind and
     # key fields belong to macos-input alone.
@@ -2053,6 +2079,12 @@ def plan(root: str, request: dict, host: dict | None = None) -> dict:
             else:
                 effects.append(f"Brings the app (pid {click['pid']}) to the front and performs a "
                                f"{input_values['kind']} click at ({click['x']}, {click['y']}) on this Mac.")
+        if action == "macos-scroll":
+            selected = [str(click["pid"]), str(click["x"]), str(click["y"]), "scroll",
+                        f"{scroll_values['direction']}:{scroll_values['pages']}"]
+            effects.append(f"Brings the app (pid {click['pid']}) to the front and scrolls "
+                           f"{scroll_values['direction']} {scroll_values['pages']} pages at "
+                           f"({click['x']}, {click['y']}) on this Mac.")
         if action == "macos-element":
             selected = [element_values["session"], element_values["element"], element_values["kind"]]
             if element_values["kind"] == "type":

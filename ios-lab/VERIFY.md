@@ -147,3 +147,118 @@ base64 JPEG thumbnail (≈31 KB at action time); preview tokens appear only as
   leaves draft.
 - A two-display Retina hotspot check (single display on this Mac).
 - The mac2 deep-inspect live round-trip with Appium running.
+
+---
+
+# Agent surface (MIR-07…12) — verification record
+
+Evidence for the stacked PR. Commands ran on the same development Mac inside
+the `feat/macos-agent-surface` worktree. Items still due are listed at the end.
+
+## Static checks
+
+```console
+$ bash -n ios-lab/mac/macos-app.sh                       # clean
+$ swiftc -O ios-lab/mac/ax-helper.swift -o ios-lab/mac/build/ax-helper   # clean build
+$ python3 -m compileall -q console/oslab.py console/mcp_server.py android-lab/lab/web_ui.py   # clean
+$ cd dashboard && npm run check          # tsc --noEmit, clean
+$ npm run test:i18n
+2552 keys match across 7 locales; no new untranslated TSX strings.
+$ npm run build && npx playwright test   # recorded in the PR checks
+```
+
+## MIR-09 — native AX helper
+
+```console
+$ bash ios-lab/mac/macos-app.sh build-ax-helper
+==> Compiling the native AX helper
+==> AX helper ready: …/ios-lab/mac/build/ax-helper
+$ bash ios-lab/mac/macos-app.sh doctor | sed -n '/advanced/,/permissions/p'
+==> advanced element reads
+  [ok]   native AX helper: built (…/ios-lab/mac/build/ax-helper)
+$ time ios-lab/mac/build/ax-helper tree --pid $(pgrep -x Finder) --depth 12 --max 400 > /tmp/tree.json
+0.01s user 0.01s system 4% cpu 0.553 total   # 271 nodes with values, focus, actions
+$ ios-lab/mac/build/ax-helper windows --pid $(pgrep -x Finder)
+{"windows":[{"subrole":"AXStandardWindow","title":"…","index":0,"main":true,"rect":{…}}, …]}
+$ ios-lab/mac/build/ax-helper menubar --pid $(pgrep -x Finder)   # menu tree with AXPress/AXPick/AXCancel
+$ ios-lab/mac/build/ax-helper focused --pid $(pgrep -x Finder)
+{"pid":1125,"focused":{"actions":["AXShowMenu"],"role":"AXOutline","label":"list view",…,"focused":true}}
+```
+
+Console-side: element reads report `engine: "ax-helper"` and fall back to
+osascript when the binary is absent; a dead pid surfaces the helper's coded
+error (`code: "TIMEOUT"`).
+
+## MIR-08 — rich observation and action semantics
+
+Element reads through the console return window-relative records with
+`value`/`placeholder`/`enabled`/`focused`/`actions`/`path`/`identity` under
+the priority trim (33 elements kept on a Finder window, `focusedPath` set).
+Verify-after-act: an armed paste returned
+`{"ok": true, "actionSent": true, "verify": {"role": "AXApplication", …}}` —
+the focused element re-read after the action. Coded refusals carry
+`code`/`retry` into the HTTP JSON (web_ui) and MCP error payloads.
+
+## MIR-07 — element actions
+
+```console
+$ python3 - <<'PY'
+oslab.macos_control_arm(root, True, owner='test-owner')
+oslab.macos_ax_perform(root, {'pid': <finder>, 'path': '0.2.0.0',
+    'identity': <hash>, 'action': 'AXShowMenu', 'windowId': <id>})
+# {'ok': True, 'path': '0.2.0.0', 'action': 'AXShowMenu', 'actionSent': True}
+oslab.macos_ax_read(root, {'pid': …, 'path': …, 'identity': …, 'attr': 'AXRole', 'windowId': …})
+# {'value': 'AXOutline', …}
+PY
+```
+
+Fail-closed proof: after a reflowing web view changed between the tree read
+and the action, the helper refused with
+`the element at that path changed since the tree was read (identity …,
+expected …)` — `code: STALE_PATH`, `retry: reobserve`, nothing acted.
+
+Scroll and paste run through `macos-app.sh input` (line-based vertical
+scroll only — horizontal refuses honestly).
+
+## MIR-11 — agent safety layer
+
+```console
+# enter without confirm → refused even while armed
+$ oslab.macos_control_input(root, {…, 'kind': 'key', 'key': 'enter', 'owner': 'test-owner'})
+PlanError: enter can submit or overwrite: send confirm:true …  (code CONFIRM_REQUIRED)
+# paste without confirm → refused
+PlanError: paste can submit or overwrite: …  (code CONFIRM_REQUIRED)
+# paste with confirm → ran, actionSent true, audited with confirmed: true
+# second owner while armed → INPUT_BUSY
+# panic stop → {'ok': True, 'disarmed': True, 'sessionsClosed': [...]}
+$ oslab.macos_control_state()   # {'armed': False, 'owner': None, 'expiresInSec': 0}
+```
+
+Screen-lock probe: `macos_screen_locked()` returns the honest `None` when
+macOS does not expose the session key (locked-screen refusal verified by
+code path, not by locking this Mac).
+
+## MIR-12 — MCP surface
+
+```console
+$ python3 - <<'PY'   # stdio JSON-RPC against console/mcp_server.py
+initialize → 2024-11-05 os-lab-macos
+tools/list → 15 tools
+tools/call macos_apps → 23 live windows
+tools/call macos_type (windowId 1) → isError, coded refusal
+tools/call macos_task {steps: [type(refused), control_state]} →
+   {"steps": 1, "failures": 1, …}  # stopOnError halts, one audit row per step
+PY
+```
+
+The task runner writes one `task-step` audit row per step; `macos_stop` from
+MCP is the same panic stop the panel uses. There is deliberately no arm
+tool: the human arms from the dashboard, the agent acts.
+
+## Still due
+
+- Panel visual pass (narrow widths, 200% zoom, both themes, RTL) with
+  script-taken screenshots before this PR leaves draft.
+- The menu-bar browser in the panel UI (the read-only endpoints exist).
+- mac2 deep-inspect + AX-helper together on a second display (single
+  display on this Mac).

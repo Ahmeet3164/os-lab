@@ -91,7 +91,7 @@ async function pumpMjpeg(res: Response, onFrame: (png: Uint8Array) => void): Pro
   }
 }
 
-type MenuState = { x: number; y: number; pid: number; gx: number; gy: number };
+type MenuState = { x: number; y: number; pid: number; gx: number; gy: number; element?: MacElement };
 type DeepSession = { bundleId: string; sessionId: string; app: string };
 
 export function MacAppPanel({ onPreview, onHide }: { onPreview: (action: string, extra?: Partial<LabRequest>) => void; onHide: () => void }) {
@@ -106,7 +106,7 @@ export function MacAppPanel({ onPreview, onHide }: { onPreview: (action: string,
   const [shotError, setShotError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [menu, setMenu] = useState<MenuState | null>(null);
-  const [dialog, setDialog] = useState<"type" | "key" | null>(null);
+  const [dialog, setDialog] = useState<"type" | "key" | "paste" | "value" | null>(null);
   const [visible, setVisible] = useState(typeof document === "undefined" || !document.hidden);
   const [hovering, setHovering] = useState(false);
   const [streamState, setStreamState] = useState<"on" | "failed">("on");
@@ -118,6 +118,8 @@ export function MacAppPanel({ onPreview, onHide }: { onPreview: (action: string,
   const revisionRef = useRef<string | undefined>(undefined);
   const pressTimer = useRef<number | null>(null);
   const menuOpened = useRef(false);
+  // This panel's identity for the single-owner input lock (MIR-11).
+  const ownerRef = useRef<string>(typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `panel-${Date.now()}`);
 
   const windows = data?.windows ?? [];
   const selected = windows.find((w) => w.windowId === windowId) ?? windows[0] ?? null;
@@ -282,12 +284,25 @@ export function MacAppPanel({ onPreview, onHide }: { onPreview: (action: string,
     }
   };
 
+  /** One advertised AX action on a menu element (MIR-07): previewed, or armed-immediate. */
+  const runElementAction = (m: MenuState, action: string) => {
+    const element = m.element;
+    if (!selected || !element?.path) return;
+    setActionError(null);
+    if (armed) {
+      void api.macosAxPerform({ pid: m.pid, path: element.path, identity: element.identity, action, windowId: selected.windowId })
+        .catch((e) => setActionError(message(e)));
+    } else {
+      onPreview("macos-perform", { elementPid: m.pid, elementWindowId: selected.windowId, elementPath: element.path, elementIdentity: element.identity, axAction: action });
+    }
+  };
+
   /** The MIR-01 input family through the same preview → confirm (or armed) pipeline. */
-  const runInputAt = (at: { pid: number; gx: number; gy: number }, kind: MacInputKind, payload?: { text?: string; key?: string }) => {
+  const runInputAt = (at: { pid: number; gx: number; gy: number }, kind: MacInputKind, payload?: { text?: string; key?: string; confirm?: boolean }) => {
     if (!selected) return;
     setActionError(null);
     if (armed) {
-      void api.macosInput({ pid: at.pid, x: Math.round(at.gx), y: Math.round(at.gy), kind, text: payload?.text, key: payload?.key })
+      void api.macosInput({ pid: at.pid, x: Math.round(at.gx), y: Math.round(at.gy), kind, text: payload?.text, key: payload?.key, owner: ownerRef.current, confirm: payload?.confirm })
         .catch((e) => {
           setActionError(message(e));
           void control.reload();
@@ -309,11 +324,11 @@ export function MacAppPanel({ onPreview, onHide }: { onPreview: (action: string,
     };
   };
 
-  const openMenu = (clientX: number, clientY: number) => {
+  const openMenu = (clientX: number, clientY: number, element?: MacElement) => {
     const point = mirrorPoint(clientX, clientY);
     if (!point || !selected) return;
     menuOpened.current = true;
-    setMenu({ x: point.px, y: point.py, pid: selected.pid, gx: point.gx, gy: point.gy });
+    setMenu({ x: point.px, y: point.py, pid: selected.pid, gx: point.gx, gy: point.gy, element });
   };
 
   // Long-press on a hotspot opens the action menu; a short press stays the plain click.
@@ -435,9 +450,19 @@ export function MacAppPanel({ onPreview, onHide }: { onPreview: (action: string,
         className={armed ? "iux-btn bg-[#f36c21] text-white hover:bg-[#fa7b32]" : "iux-btn"}
         data-variant={armed ? undefined : "outline"}
         aria-pressed={armed}
-        onClick={() => void api.macosControlArm(!armed).then(() => control.reload())}
+        onClick={() => void api.macosControlArm(!armed, ownerRef.current).then(() => control.reload()).catch((e) => setActionError(message(e)))}
       >
         <HandIcon size={14} /> {armed ? "Disarm" : "Arm control"}
+      </button>
+      <button
+        type="button" className="iux-btn" data-variant="outline"
+        title="Stop everything now: disarm, close deep-inspect sessions, end streams"
+        onClick={() => void api.macosStop().then(() => {
+          control.reload();
+          setDeep(null);
+        }).catch((e) => setActionError(message(e)))}
+      >
+        Stop
       </button>
       <a
         className="iux-btn ml-auto" data-variant="ghost"
@@ -491,9 +516,12 @@ export function MacAppPanel({ onPreview, onHide }: { onPreview: (action: string,
                   className={`absolute flex items-center justify-center rounded-md text-[10px] font-semibold ${
                     added ? "border border-emerald-400/80 bg-emerald-400/15 text-emerald-200 ring-2 ring-emerald-400/60"
                       : changed ? "border border-dashed border-amber-400/80 bg-amber-400/15 text-amber-200"
-                        : "border border-[#f36c21]/70 bg-[#f36c21]/15 text-[#ffb27a] hover:bg-[#f36c21]/35"}`}
+                        : element.focused ? "border border-violet-400/80 bg-violet-400/15 text-violet-200"
+                          : "border border-[#f36c21]/70 bg-[#f36c21]/15 text-[#ffb27a] hover:bg-[#f36c21]/35"}`}
                   style={hotspotStyle(element, bounds)}
-                  title={`${element.role}${element.label ? `: ${element.label}` : ""}${element.elementId ? ` · ${element.elementId}` : ""}`}
+                  title={`${element.role}${element.label ? `: ${element.label}` : ""}`
+                    + `${element.value ? ` — ${element.value.slice(0, 60)}` : ""}`
+                    + `${element.actions?.length ? ` · ${element.actions.slice(0, 3).join(", ")}` : ""}`}
                   aria-label={`${i + 1}${element.label ? `: ${element.label}` : `: ${element.role}`}`}
                   onPointerDown={hotspotPressDown}
                   onPointerUp={disarmPress}
@@ -501,7 +529,7 @@ export function MacAppPanel({ onPreview, onHide }: { onPreview: (action: string,
                   onContextMenu={(e) => {
                     e.preventDefault();
                     e.stopPropagation();
-                    openMenu(e.clientX, e.clientY);
+                    openMenu(e.clientX, e.clientY, element);
                   }}
                   onClick={(e) => {
                     e.stopPropagation();
@@ -531,6 +559,13 @@ export function MacAppPanel({ onPreview, onHide }: { onPreview: (action: string,
       {showElements && diff && (diff.added.length || diff.changed.length || diff.removed.length) ? (
         <p className="text-xs text-(--iux-muted-foreground)">
           {`Last refresh: ${diff.added.length} new · ${diff.changed.length} moved · ${diff.removed.length} gone.`}
+        </p>
+      ) : null}
+      {showElements && elementsData ? (
+        <p className="text-xs text-(--iux-muted-foreground)">
+          {elementsData.engine === "ax-helper"
+            ? `Engine: native AX (values, focus and actions${elementsData.trimmed ? " · list trimmed" : ""}).`
+            : "Engine: osascript fallback (run Build AX helper for values and actions)."}
         </p>
       ) : null}
       {showElements && !elements.length ? (
@@ -570,6 +605,29 @@ export function MacAppPanel({ onPreview, onHide }: { onPreview: (action: string,
         <button type="button" className="iux-btn text-left" data-variant="ghost" onClick={() => setDialog("key")}>
           Press a key…
         </button>
+        <button type="button" className="iux-btn text-left" data-variant="ghost" onClick={() => setDialog("paste")}>
+          Paste text…
+        </button>
+        <button type="button" className="iux-btn text-left" data-variant="ghost"
+          onClick={() => { const m = menu; setMenu(null); runInputAt(m, "scroll", { text: "up:3" }); }}>
+          Scroll up here
+        </button>
+        <button type="button" className="iux-btn text-left" data-variant="ghost"
+          onClick={() => { const m = menu; setMenu(null); runInputAt(m, "scroll", { text: "down:3" }); }}>
+          Scroll down here
+        </button>
+        {menu.element?.path ? (
+          <button type="button" className="iux-btn text-left" data-variant="ghost" onClick={() => setDialog("value")}>
+            Set value…
+          </button>
+        ) : null}
+        {(menu.element?.actions ?? []).slice(0, 3).map((action) => (
+          <button key={action} type="button" className="iux-btn text-left" data-variant="ghost"
+            title={`Perform ${action} on this element through the AX helper`}
+            onClick={() => { const m = menu; setMenu(null); runElementAction(m, action); }}>
+            {action.replace("AX", "")}
+          </button>
+        ))}
         <p className="px-2 pt-1 text-[10px] text-(--iux-muted-foreground)">
           {armed ? "Runs immediately (armed)." : "Previews a macos-input action first."}
         </p>
@@ -691,9 +749,29 @@ export function MacAppPanel({ onPreview, onHide }: { onPreview: (action: string,
         }} />
       ) : null}
       {dialog === "key" ? (
-        <KeyDialog armed={armed} onClose={() => setDialog(null)} onRun={(key) => {
+        <KeyDialog armed={armed} onClose={() => setDialog(null)} onRun={(key, confirm) => {
           setDialog(null);
-          if (menu) runInputAt(menu, "key", { key });
+          if (menu) runInputAt(menu, "key", { key, confirm });
+        }} />
+      ) : null}
+      {dialog === "paste" ? (
+        <PasteDialog armed={armed} onClose={() => setDialog(null)} onRun={(text) => {
+          setDialog(null);
+          if (menu) runInputAt(menu, "paste", { text, confirm: true });
+        }} />
+      ) : null}
+      {dialog === "value" ? (
+        <SetValueDialog armed={armed} onClose={() => setDialog(null)} onRun={(value) => {
+          setDialog(null);
+          const element = menu?.element;
+          if (!selected || !element?.path) return;
+          setActionError(null);
+          if (armed) {
+            void api.macosAxSet({ pid: menu!.pid, path: element.path, identity: element.identity, value, windowId: selected.windowId })
+              .catch((e) => setActionError(message(e)));
+          } else {
+            onPreview("macos-set-value", { elementPid: menu!.pid, elementWindowId: selected.windowId, elementPath: element.path, elementIdentity: element.identity, elementValue: value });
+          }
         }} />
       ) : null}
     </>
@@ -728,9 +806,10 @@ function TypeDialog({ armed, onClose, onRun }: { armed: boolean; onClose: () => 
   );
 }
 
-/** The MIR-01 key dialog: one allowlisted key, Enter included as its own explicit action. */
-function KeyDialog({ armed, onClose, onRun }: { armed: boolean; onClose: () => void; onRun: (key: string) => void }) {
+/** The MIR-01 key dialog: one allowlisted key; Enter is submit-class and confirms explicitly. */
+function KeyDialog({ armed, onClose, onRun }: { armed: boolean; onClose: () => void; onRun: (key: string, confirm?: boolean) => void }) {
   const [key, setKey] = useState("tab");
+  const submit = key === "enter" || key === "return";
   return (
     <Modal title="Press a key" icon={<CrosshairIcon size={16} />}
       description="One key press from the allowlist goes to the focused element of the app."
@@ -741,10 +820,68 @@ function KeyDialog({ armed, onClose, onRun }: { armed: boolean; onClose: () => v
             {INPUT_KEYS.map((k) => <option key={k} value={k}>{k}</option>)}
           </select>
         </Field>
-        <p className="text-xs text-(--iux-muted-foreground)">{`Will press the ${key} key.`}</p>
+        <p className="text-xs text-(--iux-muted-foreground)">
+          {`Will press the ${key} key.`}
+          {submit ? " Enter can submit forms or send messages — it asks for an explicit confirmation, even while armed." : ""}
+        </p>
         <div className="flex justify-end gap-2">
           <button type="button" className="iux-btn" data-variant="outline" onClick={onClose}>Cancel</button>
-          <button type="button" className="iux-btn" onClick={() => onRun(key)}>
+          <button type="button" className="iux-btn" onClick={() => onRun(key, submit)}>
+            {submit ? "Confirm & press" : armed ? "Run now (armed)" : "Preview"}
+          </button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+/** The MIR-07 paste dialog: pastes may carry newlines and always confirm (MIR-11). */
+function PasteDialog({ armed, onClose, onRun }: { armed: boolean; onClose: () => void; onRun: (text: string) => void }) {
+  const [text, setText] = useState("");
+  const valid = text.length > 0 && text.length <= 2000;
+  return (
+    <Modal title="Paste text" icon={<CrosshairIcon size={16} />}
+      description="The text goes to the clipboard and is pasted at the chosen point. The clipboard is replaced, and pastes always ask for confirmation."
+      onClose={onClose}>
+      <div className="flex flex-col gap-3 px-6 pb-5">
+        <Field label="Text (1–2000 characters, newlines allowed)">
+          <textarea className="iux-input" value={text} maxLength={2000} rows={4} autoFocus
+            onChange={(e) => setText(e.target.value)} aria-label="Text to paste" />
+        </Field>
+        <p className="text-xs text-(--iux-muted-foreground)">
+          {valid ? `Will paste ${text.length} characters (the clipboard is replaced).` : "The text must be 1–2000 characters."}
+        </p>
+        <div className="flex justify-end gap-2">
+          <button type="button" className="iux-btn" data-variant="outline" onClick={onClose}>Cancel</button>
+          <button type="button" className="iux-btn" disabled={!valid} onClick={() => onRun(text)}>
+            Confirm & paste
+          </button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+/** The MIR-07 set-value dialog: writes straight into a settable AX element. */
+function SetValueDialog({ armed, onClose, onRun }: { armed: boolean; onClose: () => void; onRun: (value: string) => void }) {
+  const [value, setValue] = useState("");
+  const valid = value.length > 0 && value.length <= 2000 && !/[\r\n]/.test(value);
+  return (
+    <Modal title="Set element value" icon={<CrosshairIcon size={16} />}
+      description="Writes the value straight into this element through the AX helper (settable elements only). No Return is sent."
+      onClose={onClose}>
+      <div className="flex flex-col gap-3 px-6 pb-5">
+        <Field label="Value (1–2000 characters, no Return)">
+          <input className="iux-input" value={value} maxLength={2000} autoFocus
+            onChange={(e) => setValue(e.target.value)} aria-label="Value to set" />
+        </Field>
+        <p className="text-xs text-(--iux-muted-foreground)">
+          {valid ? `Will write ${value.length} characters into the element${armed ? " now (armed)" : " (previewed)"}.`
+            : "The value must be 1–2000 characters without Return."}
+        </p>
+        <div className="flex justify-end gap-2">
+          <button type="button" className="iux-btn" data-variant="outline" onClick={onClose}>Cancel</button>
+          <button type="button" className="iux-btn" disabled={!valid} onClick={() => onRun(value)}>
             {armed ? "Run now (armed)" : "Preview"}
           </button>
         </div>

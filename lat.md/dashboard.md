@@ -46,8 +46,16 @@ long-press a hotspot for the input family (double, right, type, key —
 previewed `macos-input`, typing never sends Return), Deep inspect opens one
 armed-only mac2 session per app through `/api/labs/macos/session*` and
 routes hotspot actions through stable element ids, and the toolbar
-downloads the local audit log from `/api/labs/macos/audit.json`. See
-[[ios-lab]] for permissions.
+downloads the local audit log from `/api/labs/macos/audit.json`.
+
+The agent surface adds the native AX helper's values, focus and advertised
+actions to every hotspot (a priority trim, with the serving engine shown),
+a hotspot menu with set-value, advertised AX actions, scroll and paste,
+submit-class confirms for Enter and pastes even while armed, a persistent
+panic Stop, single-owner arming, and read-only windows/menu-bar/focused
+endpoints. `console/mcp_server.py` exposes the same guarded surface as a
+stdio MCP server — the model acts, the console guards, every step is
+audited. See [[ios-lab]] for permissions.
 
 ## UX readiness
 

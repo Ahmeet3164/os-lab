@@ -108,6 +108,48 @@ The app mirror roadmap (MIR-01…06, see
   rows and `/api/labs/macos/audit.json` downloads the file; nothing leaves
   this Mac.
 
+The agent surface (MIR-07…12, see
+[[ios-lab/PLAN-macos-agent-surface.md]]) turns the mirror into a guarded
+surface a computer-use agent can drive — the observe → act → verify loop
+the computer-use runtimes share, with the guardrails intact:
+
+- **Native AX helper (MIR-09)** — `ios-lab/mac/ax-helper.swift`, compiled on
+  demand (`make -C ios-lab mac-ax-helper`, CLT only) into
+  `ios-lab/mac/build/`, replaces the System Events osascript for tree reads:
+  full attribute trees in milliseconds with value, placeholder, enabled and
+  focused state and advertised AX actions, window pinning, menu-bar trees
+  and one-attribute reads. Elements carry a child-index path whose identity
+  hash fails closed (`STALE_PATH`) when the tree moved. Element reads
+  report their engine and fall back to osascript honestly.
+- **Rich observation (MIR-08)** — the elements endpoint returns values,
+  placeholders, enabled/focused state, actions and paths under a priority
+  trim (interactive elements and ancestors kept, 400 cap, `trimmed` marker);
+  input actions answer `actionSent` with a verify-after-act focused-element
+  read; refusals carry machine codes (`NOT_ARMED`, `STALE_PATH`,
+  `CONFIRM_REQUIRED`, `SCREEN_LOCKED`, `INPUT_BUSY`, …) with retry hints.
+- **Element actions (MIR-07)** — `macos-set-value` and `macos-perform`
+  previewed actions write values into settable elements and run advertised
+  AX actions through the helper; the input family gains `scroll` (vertical,
+  1–10 pages) and `paste` (clipboard replaced). The panel's hotspot menu
+  offers all of it, coordinates last.
+- **Windows and menus (MIR-10)** — read-only
+  `/api/labs/macos/apps/<pid>/windows|menubar|focused` endpoints expose AX
+  windows (sheets and alerts flagged), the menu-bar tree and the focused
+  element without activating anything.
+- **Agent safety (MIR-11)** — submit-class actions (Enter/Return keys,
+  pastes) need `confirm: true` even while armed; `POST /api/labs/macos/stop`
+  is the panic stop (disarm + close sessions + end streams via the stream
+  epoch); armed control has a single owner; a locked screen refuses input;
+  `ios-lab/mac/agent-apps.json` optionally allowlists the apps agents may
+  drive.
+- **MCP surface (MIR-12)** — `console/mcp_server.py` (stdlib stdio MCP,
+  `make -C ios-lab mac-mcp`) exposes observe/act/verify/stop tools to
+  computer-use agents. Read-only tools are always available; every input
+  rides armed control, the audit log and the confirm gates, and there is
+  deliberately no arm tool — the human arms from the dashboard. `macos_task`
+  runs a scripted sequence (max 25 steps) with one audit row per step for
+  reproducible security reports.
+
 ## Research
 
 The top iOS-in-Docker options, networking and operational limits.
