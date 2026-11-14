@@ -16,6 +16,7 @@ Usage:
   ./labctl all <command> [options]
   ./labctl ui [--port N]      Open the web console (default port 5050)
   ./labctl cleanup <command>  Cleanup Lab readiness (see below)
+  ./labctl web <command>      Web Lab engine (see below)
 
 Labs:
   win | windows      Windows VM lab (win-lab/)
@@ -24,6 +25,7 @@ Labs:
   linux | lin        Linux VM lab (linux-lab/)
   source             Local source/package analysis (source-lab/)
   cleanup            Cleanup Lab disk scan/clean engine (cleanup-lab/)
+  web                Web Lab embedded browser engine (web-lab/)
   all                Run a command for Linux-host labs
 
 Commands:
@@ -75,6 +77,16 @@ Profiles:
 Cleanup Lab commands (read-only; scanning and cleaning arrive with CLN-03/CLN-13):
   ./labctl cleanup status [--json]   One-screen readiness summary; exit 0 ready, 1 problem
   ./labctl cleanup doctor [--json]   Every check, path and hint
+
+Web Lab commands (make -C web-lab):
+  ./labctl web doctor                Check cargo and the platform webview runtime
+  ./labctl web setup                 Build the engine (cargo build --release)
+  ./labctl web up [PORT=N]           Start the engine (default port 5077)
+  ./labctl web stop                  Stop the engine
+  ./labctl web status                Report engine readiness
+  ./labctl web open URL              Open a lab browser window (engine must run)
+  ./labctl web events                Dump captured events
+  ./labctl web test | clean          Engine unit tests | cargo clean
 
 Examples:
   ./labctl win profile use lightweight

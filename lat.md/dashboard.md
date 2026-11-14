@@ -43,6 +43,17 @@ use the shared preview and jobs service for explicit actions. Source readiness
 runs natively through Python, and public Source routes show information without
 polling a local engine. See [[source-lab#Console operations]].
 
+## Web Lab console
+
+[[console/web_api.py]] reports Web Lab readiness, starts and stops the engine
+process, and proxies the engine's `/api/web/*` JSON under the same Host guard.
+`console/oslab.py` registers the lab with the `native-rust` provider.
+
+The local workbench route (`/web-lab/`,
+[[dashboard/src/views/web-lab/pages.tsx]]) opens windows, manages injections,
+runs eval and tails the engine's event log; it is console-only and never
+appears on public Pages.
+
 ## Serving and builds
 
 [[android-lab/lab/web_ui.py]] serves the newest of `dashboard/build` (local)
