@@ -330,6 +330,61 @@ no request steers the walker. Console: `GET /api/cleanup/explorer/roots`
 and typed `explorer`/`explorer-subtree` jobs. The Space Explorer tab never
 deletes; it links cleaning back to the plan flow.
 
+## Cleaner Widgets (CLW)
+
+The cleaner-widgets workstream (PR #226) ports the reference app's macOS
+WidgetKit feature to the desktop app. Task ids are `CLW-01…13`; the plan
+lives in [[cleanup-lab/PLAN-cleaner-widgets.md]].
+
+### Widget snapshot (CLW-01/02)
+
+[[cleanup-lab/engine/cleanup_lab/widget.py]] folds existing engine payloads
+into one typed, path-free snapshot and publishes it into the macOS App
+Group container.
+
+The fold covers home-volume disk numbers, the latest finished scan, history
+reclaim totals, the monitor's schedule and warnings, bookmark flag counts
+and the FDA probe. The container (`group.com.keyvanarasteh.oslab`) is never
+created; `OSLAB_WIDGET_GROUP_DIR` is the test seam, and a machine without
+the container publishes nothing, honestly. `GET /api/cleanup/widget` builds
+and publishes in one call.
+
+### Publishing (CLW-04)
+
+The console republishes the snapshot after job completions, monitor ticks
+and the mutating handlers.
+
+The job hook lives once in the spawn wrapper (tolerating rootless workers);
+monitor ticks, evaluations, bookmark and custom-entry mutations and monitor
+config saves refresh it too. The write is atomic (temp file +
+`os.replace`, 0600); the widget re-reads the file per timeline build, so a
+corrupt write is never observable.
+
+### Desktop app (CLW-03/05/06)
+
+[[app/widget]] builds two macOS targets with xcodegen + xcodebuild: the
+WidgetKit extension and `OSLabWidgetReloader.framework`.
+
+The extension renders small/medium/large layouts in the dashboard's token
+mirror (macOS 14+, so older hosts simply never load it). The framework's
+`@objc` class is dlopen'd by the Tauri host from `Contents/Frameworks` to
+call WidgetCenter. The intent writes a timestamped request file; the host
+consumes it once on window focus with a 120-second max age, then drives
+`window.__oslabQuickClean`, which follows the dashboard's plan → confirm →
+run flow. `oslab://` deep links register through tauri-plugin-deep-link and
+land as whitelisted routes in `window.__oslabNavigate` (tab ids or overview
+section ids).
+
+### Release embedding (CLW-08/09)
+
+`app/scripts/release-mac.sh` builds the widget products first, embeds them
+and rebuilds the app's seal.
+
+After the embed it re-signs appex → framework → app with the App Group
+entitlement and hardened runtime, regenerates and re-signs the updater
+tar.gz, re-notarizes the app, and verifies the nested code and entitlement.
+Pull-request dry runs compile the widget targets.
+
 ## Dashboard pages
 
 [[dashboard/src/views/cleanup/pages.tsx]] renders the dashboard at `/cleanup/`:
@@ -376,7 +431,9 @@ The cleaner-pro layers add `GET /api/cleanup/permissions`, `GET /api/cleanup/mon
 endpoints (`bookmarks`, `bookmarks/add|update|remove|quick-clean`), the
 custom-entry endpoints (`custom-entries`, `custom-entries/remove`) and the
 explorer (`explorer/roots`, typed `explorer` and `explorer-subtree` jobs) —
-each typed and validated again by the engine.
+each typed and validated again by the engine. The cleaner-widgets layer
+adds `GET /api/cleanup/widget` (read-only fold, published into the App
+Group container as a side effect).
 `POST /api/cleanup/scan`, `POST /api/cleanup/plan` and `POST /api/cleanup/clean
 {planId}` start jobs whose requests carry catalog ids, an optional worker count or
 mode, and a plan id only. `GET /api/cleanup/jobs/<id>` returns progress and result;
@@ -420,7 +477,8 @@ covers the probe, the catalog, the scan, plan → clean (guard, fingerprints,
 Trash by default, honest failures), the path rules, the CLI exit codes, the
 volume inventory, the privileged actions, the relocation executor, the
 permission probes and classification, the monitor triggers and store, the
-bookmarks, the custom overlay and the explorer walker.
+bookmarks, the custom overlay, the explorer walker and the widget snapshot
+fold; the desktop app's Rust bridge adds `cargo test widget::`.
 Tests live in [[cleanup-lab/engine/tests]]; the console's typed job contract is
 covered by [[android-lab/lab/tests/test_cleanup_console.py]]. [[scripts/run-tests.sh]]
 runs the same suites next to the reference code tests, the Android suite, `bash -n`,

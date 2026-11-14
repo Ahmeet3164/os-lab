@@ -333,6 +333,22 @@ export interface BookmarkChanges {
   autoCleanHook?: { enabled: boolean; lastRunAt?: number | null };
   sizeAlert?: { enabled?: boolean; thresholdBytes?: number; armed?: boolean; lastAlertAt?: number | null };
 }
+/** CLW-01: the macOS widget snapshot — one read-only fold of the lab state. */
+export interface CleanupWidgetSnapshot {
+  schemaVersion: number;
+  capturedAt: number;
+  platform: string;
+  capable: boolean;
+  disk: { mountPoint: string | null; totalBytes: number | null; freeBytes: number | null; usedPercent: number | null };
+  lastScan: { finishedAt: number | null; foundItems: number; foundBytes: number; unreadable: number } | null;
+  progress: { done: number; total: number } | null;
+  cleanup: { totalReclaimedBytes: number; lastRunAt: number | null };
+  monitor: { enabled: boolean; intervalSeconds: number | null; nextCheckAt: number | null; lastWarningAt: number | null; warningCount: number };
+  bookmarks: { count: number; quickCleanCount: number; hookCount: number; alertCount: number };
+  permissions: { fullDiskAccess: boolean | null };
+  status: "cleaning" | "scanning" | "ready-to-clean" | "up-to-date";
+  publish: { published: boolean; path: string | null; reason: string | null };
+}
 
 export class ApiError extends Error {
   constructor(
@@ -406,6 +422,8 @@ export const api = {
   cleanupMonitorConfig: (config: CleanupMonitorConfig) => post<CleanupMonitorStatus>("/api/cleanup/monitor/config", config),
   cleanupMonitorEvaluate: () => post<CleanupMonitorStatus>("/api/cleanup/monitor/evaluate"),
   cleanupVolumes: () => call<CleanupVolumes>("/api/cleanup/volumes"),
+  /** CLW-02: the widget snapshot — builds and publishes in one call. */
+  cleanupWidget: () => call<CleanupWidgetSnapshot>("/api/cleanup/widget"),
   cleanupBookmarks: () => call<BookmarksPayload>("/api/cleanup/bookmarks"),
   cleanupBookmarkAdd: (entryId: string) => post<BookmarksPayload>("/api/cleanup/bookmarks", { entryId }),
   cleanupBookmarkUpdate: (entryId: string, changes: BookmarkChanges) => post<BookmarksPayload>("/api/cleanup/bookmarks/update", { entryId, ...changes }),
