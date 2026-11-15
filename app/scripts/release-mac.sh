@@ -156,6 +156,16 @@ if [ -d "$APP_DIR/widget/build/OSLabWidgets.appex" ]; then
   rm -rf "$APP/Contents/PlugIns/OSLabWidgets.appex" "$APP/Contents/Frameworks/OSLabWidgetReloader.framework"
   cp -R "$APP_DIR/widget/build/OSLabWidgets.appex" "$APP/Contents/PlugIns/"
   cp -R "$APP_DIR/widget/build/OSLabWidgetReloader.framework" "$APP/Contents/Frameworks/"
+  # The Web Lab engine ships as a nested resource binary (staged under
+  # Resources/os-lab/web-lab). Notarization refuses unsigned nested Mach-O, so
+  # sign it here — inside-out, before the host app is re-signed.
+  ENGINE_BIN="$APP/Contents/Resources/os-lab/web-lab/browser/target/release/weblab"
+  if [ -f "$ENGINE_BIN" ]; then
+    say "signing the nested web-lab engine"
+    codesign --force --options runtime --timestamp \
+      --sign "$APPLE_SIGNING_IDENTITY" "$ENGINE_BIN" \
+      || die "signing the web-lab engine failed"
+  fi
   codesign --force --options runtime --timestamp --entitlements "$WIDGET_ENTITLEMENTS" \
     --sign "$APPLE_SIGNING_IDENTITY" "$APP/Contents/PlugIns/OSLabWidgets.appex" \
     || die "signing the widget extension failed"
