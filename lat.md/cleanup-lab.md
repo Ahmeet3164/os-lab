@@ -393,10 +393,12 @@ section ids).
 `app/scripts/release-mac.sh` builds the widget products first, embeds them
 and rebuilds the app's seal.
 
-After the embed it re-signs appex → framework → app with the App Group
-entitlement and hardened runtime, regenerates and re-signs the updater
-tar.gz, re-notarizes the app, and verifies the nested code and entitlement.
-Pull-request dry runs compile the widget targets.
+After the embed it re-signs appex (with App Sandbox and App Group) →
+framework → app (with App Group) with hardened runtime, regenerates and re-signs
+the updater tar.gz, re-notarizes the app, and verifies the nested code and
+entitlements. Pull-request dry runs compile the widget targets. Build timings,
+entitlements checks, codesign verification, and test execution profiles are
+documented in [[docs/debug-widget-build.md]].
 
 ## Dashboard pages
 

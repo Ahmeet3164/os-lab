@@ -217,6 +217,10 @@ if [ -d "$APP/Contents/PlugIns/OSLabWidgets.appex" ]; then
   codesign --verify --strict "$APP/Contents/Frameworks/OSLabWidgetReloader.framework"
   codesign -d --entitlements - "$APP" 2>/dev/null | grep -q "group.com.keyvanarasteh.oslab" \
     || die "the app signature is missing the widget App Group entitlement"
+  codesign -d --entitlements - "$APP/Contents/PlugIns/OSLabWidgets.appex" 2>/dev/null | grep -q "com.apple.security.app-sandbox" \
+    || die "the widget extension signature is missing the App Sandbox entitlement"
+  codesign -d --entitlements - "$APP/Contents/PlugIns/OSLabWidgets.appex" 2>/dev/null | grep -q "group.com.keyvanarasteh.oslab" \
+    || die "the widget extension signature is missing the widget App Group entitlement"
 fi
 codesign --verify --verbose=1 "$DMG"
 if [ "$NOTARIZE" = 1 ]; then
