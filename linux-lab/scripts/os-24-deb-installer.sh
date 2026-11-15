@@ -23,3 +23,10 @@ if !  dpkg-deb --info "$DEB_FILE" > /dev/null 2>&1; then
     echo "Hata? Gecersiz deb paketi"
      exit 1
 fi
+echo "Paket Kurulumu baslatılıyor: $DDEB_FILE"
+
+sudo apt install -y "$(
+	eealpath "$DEB_FILE"
+)"
+
+echo "Paket kurulumu tamamlandi"
