@@ -118,10 +118,13 @@ def test_windows_host_uses_wsl2():
 
 
 def test_only_unsupported_labs_are_unavailable_across_hosts():
+    # Web Lab follows the local engine build, not a VM provider: unavailable
+    # on every host until the engine binary exists (as in the linux-kvm test).
+    web_engine = os.path.isfile(os.path.join(REPO_ROOT, "web-lab", "browser", "target", "release", "weblab"))
     expected = {
-        "linux": {"macos"},
-        "windows": {"macos"},
-        "macos": {"windows", "linux"},
+        "linux": {"macos"} | (set() if web_engine else {"web"}),
+        "windows": {"macos"} | (set() if web_engine else {"web"}),
+        "macos": {"windows", "linux"} | (set() if web_engine else {"web"}),
     }
     for os_name, unavailable in expected.items():
         host = make_host(os_name=os_name, kvm=os_name == "linux", distros=("Ubuntu",) if os_name == "windows" else ())
