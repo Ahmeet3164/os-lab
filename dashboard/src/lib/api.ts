@@ -319,13 +319,13 @@ export interface CleanupResult {
   totals: { items: number; trashed: number; deleted: number; skipped: number; failed: number; bytes: number };
 }
 export interface CleanupJob {
-  id: string; kind: "scan" | "plan" | "clean"; state: "running" | "done" | "cancelled" | "failed";
-  request: { entryIds?: string[]; mode?: "trash" | "delete"; planId?: string };
+  id: string; kind: "scan" | "plan" | "clean" | "relocation-plan" | "relocation-run"; state: "running" | "done" | "cancelled" | "failed";
+  request: { entryIds?: string[]; mode?: "trash" | "delete"; planId?: string; action?: string; entryId?: string; destination?: string; previewId?: string };
   progress: Record<string, string | number> | null;
-  result: CleanupScan | CleanupPlan | CleanupResult | null;
+  result: CleanupScan | CleanupPlan | CleanupResult | CleanupRelocationPlan | CleanupRelocationRun | null;
   error: string | null;
 }
-export interface CleanupHistory { entries: { id: number; result: CleanupResult; hmac: string }[]; total: number; verified: boolean }
+export interface CleanupHistory { entries: { id: number; result: CleanupResult | CleanupRelocationRun; hmac: string }[]; total: number; verified: boolean }
 
 export interface CleanupContainerCapabilities {
   available: boolean; engine: "docker" | "podman" | null; reason: string;
@@ -345,7 +345,8 @@ export interface CleanupVMInventory {
   unavailable: { id: string; root: string | null; reason: string }[];
 }
 export interface CleanupAuxJob<T> {
-  id: string; kind: "container-prune" | "vm-scan" | "leftovers"; state: "running" | "done" | "cancelled" | "failed";
+  id: string; kind: "container-prune" | "vm-scan" | "leftovers" | "relocation-plan" | "relocation-run"; state: "running" | "done" | "cancelled" | "failed";
+  progress: Record<string, string | number> | null;
   result: T | null; error: string | null;
 }
 export interface CleanupCrossLeftovers {
@@ -413,6 +414,38 @@ export interface CleanupVolumes {
   platform: string; threshold: number;
   volumes: CleanupVolume[];
   homeVolume: string | null; warnings: string[]; error: string | null;
+}
+/** CLN-27: one relocatable catalog entry from GET /api/cleanup/relocation. */
+export type CleanupRelocationState = "local_only" | "linked_ok" | "missing_link" | "broken_link" | "wrong_target" | "conflict" | "missing";
+export interface CleanupRelocationEntry {
+  entryId: string; name: string; path: string;
+  relocatable: boolean; interrupted: boolean;
+}
+export interface CleanupRelocationDestination {
+  mountPoint: string; freeBytes: number; totalBytes: number; kind: string;
+}
+export interface CleanupRelocationStatus {
+  platform: string;
+  entries: CleanupRelocationEntry[];
+  destinations: CleanupRelocationDestination[];
+}
+/** One ordered typed step of a relocation plan (copy → verify → link → …). */
+export interface CleanupRelocationStep { op: string; src: string; dst: string }
+export interface CleanupRelocationPlan {
+  action: "move" | "restore" | "relink" | "resume";
+  entryId: string; entryName: string; homePath: string; storePath: string; destination: string;
+  files: number; sizeBytes: number; freeBytes: number;
+  state: CleanupRelocationState;
+  steps: CleanupRelocationStep[];
+  fingerprint: { files: number; bytes: number };
+  previewId: string;
+}
+export interface CleanupRelocationRun {
+  entryId: string; action: string;
+  homePath?: string; storePath?: string;
+  status: string; error?: string;
+  bytesRelocated?: number | null; bytesRemoved?: number | null;
+  cancelled?: boolean; stepsDone?: number; stepsTotal?: number;
 }
 /** CLNP-14: one bookmark — a catalog-entry reference with its behaviours. */
 export interface BookmarkRecord {
@@ -554,6 +587,12 @@ export const api = {
   cleanupMonitorConfig: (config: CleanupMonitorConfig) => post<CleanupMonitorStatus>("/api/cleanup/monitor/config", config),
   cleanupMonitorEvaluate: () => post<CleanupMonitorStatus>("/api/cleanup/monitor/evaluate"),
   cleanupVolumes: () => call<CleanupVolumes>("/api/cleanup/volumes"),
+  /** CLN-27: relocatable entries and destination volumes, then plan → confirm → run. */
+  cleanupRelocation: () => call<CleanupRelocationStatus>("/api/cleanup/relocation"),
+  cleanupRelocationPlan: (action: "move" | "restore" | "relink" | "resume", entryId: string, destination: string) =>
+    post<CleanupAuxJob<CleanupRelocationPlan>>("/api/cleanup/relocation/plan", { action, entryId, destination }),
+  cleanupRelocationRun: (previewId: string) =>
+    post<CleanupAuxJob<CleanupRelocationRun>>("/api/cleanup/relocation/run", { previewId }),
   /** CLW-02: the widget snapshot — builds and publishes in one call. */
   cleanupWidget: () => call<CleanupWidgetSnapshot>("/api/cleanup/widget"),
   cleanupBookmarks: () => call<BookmarksPayload>("/api/cleanup/bookmarks"),

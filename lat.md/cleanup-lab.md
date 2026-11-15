@@ -231,8 +231,24 @@ owning application must not be running, and there is no elevated fallback. An
 interrupted move is flagged in the status and continued by a typed resume that
 re-verifies the store copy before touching the aside. `POST
 /api/cleanup/relocation/plan` and `POST /api/cleanup/relocation/run` follow the
-typed preview → single-use job pattern and are audited. The `/cleanup/`
-relocation card is the dashboard layer's part.
+typed preview → single-use job pattern and are audited.
+
+The dashboard layer is the `/cleanup/relocation/` tab
+([[dashboard/src/views/cleanup/relocation-card.tsx]]): one row per relocatable
+entry with its path, a Local folder / Linked / Interrupted chip (the status
+payload reports relocatable and interrupted; link detail appears on the plan),
+a destination select fed by the volume inventory, and the plan preview behind
+the confirm dialog that names the entry, the destination and the symlink fact
+before anything moves. A run shows per-step progress with a Cancel that stops
+between steps; a completed move shows the store path, a failure says the
+original or a verified copy is still in place, and relocation results render
+as their own rows on the History tab. The overview's Relocation tile opens the
+tab. The first entry in the family is
+`simulators.coresimulator-devices`
+([[cleanup-lab/catalog/simulators.json]]): the CoreSimulator devices folder,
+`cleanable: false` (relocation-only — cleaning is refused), owning processes
+Simulator and Xcode, so an iOS Simulator setup can live outside the OS disk
+while simulator runtimes stay system-managed.
 
 ## Cleaner Pro (CLNP)
 

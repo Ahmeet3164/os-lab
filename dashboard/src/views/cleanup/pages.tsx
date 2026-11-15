@@ -15,16 +15,17 @@ import { MonitorBanner, MonitorCard } from "./monitor-card";
 import { BookmarkToggle, BookmarksSection } from "./bookmarks-card";
 import { OverviewCards, StorageHero, type OverviewCard } from "./overview";
 import { SpaceExplorer } from "./space-explorer";
+import { RelocationCard } from "./relocation-card";
 import { WidgetsCard } from "./widgets-card";
 import type { BookmarksPayload, CleanupVolume, CleanupWidgetSnapshot } from "../../lib/api";
 
 /** CLW-03: overview sections the desktop app's deep links may target. */
 const WIDGET_SECTIONS = new Set(["cleanup-widgets", "cleanup-monitor", "cleanup-permissions", "cleanup-bookmarks", "overview-review", "overview-storage"]);
 
-export type CleanupPageId = "" | "scan" | "results" | "leftovers" | "history" | "space";
-export const CLEANUP_PAGES: CleanupPageId[] = ["", "scan", "results", "leftovers", "history", "space"];
+export type CleanupPageId = "" | "scan" | "results" | "leftovers" | "history" | "space" | "relocation";
+export const CLEANUP_PAGES: CleanupPageId[] = ["", "scan", "results", "leftovers", "history", "space", "relocation"];
 /** Any `/cleanup` route for any locale or base path, at the end of a pathname. */
-const CLEANUP_ROUTE = /\/cleanup(?:\/(scan|results|leftovers|history|space))?\/?$/;
+const CLEANUP_ROUTE = /\/cleanup(?:\/(scan|results|leftovers|history|space|relocation))?\/?$/;
 
 /**
  * CLNP-06: the cleanup route a pathname names, or null when it is not one.
@@ -514,7 +515,7 @@ export default function CleanupPage({ page: initialPage = "" }: { page?: Cleanup
 
   const tabs: { id: CleanupPageId; label: string; path: string }[] = [
     { id: "", label: "Dashboard", path: "" }, { id: "space", label: "Space Explorer", path: "space/" }, { id: "scan", label: "Advanced scan", path: "scan/" }, { id: "results", label: "Results", path: "results/" },
-    { id: "leftovers", label: "Leftovers", path: "leftovers/" }, { id: "history", label: "History", path: "history/" }
+    { id: "leftovers", label: "Leftovers", path: "leftovers/" }, { id: "history", label: "History", path: "history/" }, { id: "relocation", label: "Relocation", path: "relocation/" }
   ];
   return <AppShell activeId={`cleanup-${page || "scan"}`}>
     <TopBar title="Cleanup Lab" icon={<BroomIcon size={20} />} />
@@ -739,8 +740,10 @@ export default function CleanupPage({ page: initialPage = "" }: { page?: Cleanup
           {(status?.platform?.id === "linux" || status?.platform?.id === "windows") && <CrossPlatformLeftovers />}
           </>}
           {page === "space" && <SpaceExplorer scanHref={link("scan/")} />}
+          {page === "relocation" && <RelocationCard now={now} />}
           {page === "history" && <Section title="Audit history" description="Verified cleanup runs stored on this computer.">
             {!history?.entries.length ? <Empty>No cleanup runs recorded yet.</Empty> : history.entries.map((entry) =>
+              "totals" in entry.result ?
               <div key={entry.id} className="border-b border-(--iux-border) py-3 text-sm">
                 <div className="flex items-center gap-2">
                   <strong>Run #{entry.id}</strong>
@@ -757,6 +760,15 @@ export default function CleanupPage({ page: initialPage = "" }: { page?: Cleanup
                     </div>)}
                   </div>
                 </details>
+              </div> :
+              <div key={entry.id} className="border-b border-(--iux-border) py-3 text-sm">
+                <div className="flex items-center gap-2">
+                  <strong>Run #{entry.id}</strong>
+                  <Badge>Relocation</Badge>
+                  <span dir="ltr" className="ms-auto tabular-nums">{bytes(entry.result.bytesRelocated)}</span>
+                </div>
+                <p className="mt-1 break-all text-xs text-(--iux-muted-foreground)" translate="no">{entry.result.entryId} · {entry.result.action} · {entry.result.cancelled ? "cancelled" : entry.result.status === "completed" ? "completed" : "failed"}</p>
+                <p className="break-all text-xs text-(--iux-muted-foreground)" translate="no">{entry.result.storePath || entry.result.error}</p>
               </div>)}
           </Section>}
         </>}

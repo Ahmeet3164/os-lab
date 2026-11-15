@@ -170,7 +170,8 @@ function buildGroups(labs: LabStatus[] | undefined, running: Set<string>, androi
             { id: "cleanup-space", label: "Space Explorer" },
             { id: "cleanup-results", label: "Results" },
             { id: "cleanup-leftovers", label: "Leftovers" },
-            { id: "cleanup-history", label: "History" }
+            { id: "cleanup-history", label: "History" },
+            { id: "cleanup-relocation", label: "Relocation" }
           ] },
         { id: "web", label: "Web Lab", icon: LAB_ICON.web(),
           badge: running.has("web") ? <RunningDot /> : <StatePill lab={lab("web")} />,
