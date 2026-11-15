@@ -6,6 +6,7 @@ import json
 import os
 import struct
 import zipfile
+import zlib
 from datetime import date
 
 import pytest
@@ -467,6 +468,8 @@ def test_malformed_string_pool_count_is_rejected_without_blowup():
     good = build_axml(nsc_tree())
     # chunk header at 8: type(2) hsize(2) size(4) count(4) -> claim a huge string count
     bad = good[:16] + struct.pack("<I", 0x7FFFFFFF) + good[20:]
+    with pytest.raises(ValueError, match="exceeds chunk bounds"):
+        pd._parse_string_pool(bad, 8)
     assert pd.decode_axml(bad) is None
 
 
@@ -479,6 +482,15 @@ def test_unreadable_entries_mark_scan_incomplete(tmp_path, monkeypatch):
     assert report["skipped"]
 
 
+def test_corrupt_apk_decompressor_error_marks_incomplete(tmp_path, monkeypatch):
+    apk = make_apk(tmp_path, {"a.txt": b"hello"})
+    monkeypatch.setattr(zipfile.ZipFile, "open", lambda *a, **k: (_ for _ in ()).throw(zlib.error("bad stream")))
+    report = pd.analyze(apk)
+    assert report["scan_complete"] is False
+    assert report["pinning_status"] == "incomplete_scan"
+    assert "zlib" in report["skipped"][0]["reason"].lower() or "error" in report["skipped"][0]["reason"].lower()
+
+
 def test_aggregate_file_limit_truncates_scan(tmp_path, monkeypatch):
     monkeypatch.setattr(pd, "MAX_TOTAL_FILES", 2)
     apk = make_apk(tmp_path, {f"f{i}.txt": b"x" for i in range(5)})
@@ -486,17 +498,105 @@ def test_aggregate_file_limit_truncates_scan(tmp_path, monkeypatch):
     assert report["scan_truncated"] is True and report["scan_complete"] is False
 
 
-def test_output_dir_inside_target_is_not_rescanned(tmp_path):
+def test_skipped_entries_respect_budget_and_report_truncation(tmp_path, monkeypatch):
+    monkeypatch.setattr(pd, "MAX_FILE_BYTES", 1)
+    monkeypatch.setattr(pd, "MAX_TOTAL_FILES", 4)
+    monkeypatch.setattr(pd, "MAX_SKIPPED_RECORDED", 2)
+    apk = make_apk(tmp_path, {f"big{i}.txt": b"0123456789" for i in range(10)})
+    report = pd.analyze(apk)
+    assert report["scan_truncated"] is True
+    assert len(report["skipped"]) == 2
+    assert report["skipped_count"] == 5
+    assert report["skipped_truncated"] is True
+    md = pd.render_markdown(report)
+    assert "5 input(s) skipped" in md
+    assert "3 more skipped input(s) omitted" in md
+
+
+def test_dir_scan_enforces_aggregate_byte_budget(tmp_path, monkeypatch):
+    monkeypatch.setattr(pd, "MAX_TOTAL_BYTES", 10)
+    (tmp_path / "a.txt").write_bytes(b"12345678")
+    (tmp_path / "b.txt").write_bytes(b"12345678")
+    report = pd.analyze(str(tmp_path))
+    assert report["scan_truncated"] is True
+    assert report["scan_complete"] is False
+    assert report["pinning_status"] == "incomplete_scan"
+
+
+def test_nsc_outside_res_xml_not_treated_as_referenced(tmp_path):
+    apk = make_apk(tmp_path, {
+        "AndroidManifest.xml": build_axml(manifest_tree(nsc_ref=True)),
+        "assets/network_security_config.xml": build_axml(nsc_tree()),
+    })
+    report = pd.analyze(apk)
+    assert report["pinning_status"] != "pinned"
+    assert methods_of(report)["network_security_config"]["confidence"] == "low"
+
+
+def test_nsc_without_manifest_does_not_claim_pinned(tmp_path):
+    apk = make_apk(tmp_path, {
+        "res/xml/network_security_config.xml": build_axml(nsc_tree()),
+    })
+    report = pd.analyze(apk)
+    assert report["pinning_status"] != "pinned"
+
+
+def test_duplicate_nsc_prefers_referenced_copy_regardless_of_scan_order(tmp_path):
+    nsc_bytes = build_axml(nsc_tree())
+    apk = make_apk(tmp_path, {
+        "assets/unreferenced_copy.xml": nsc_bytes,
+        "res/xml/network_security_config.xml": nsc_bytes,
+        "AndroidManifest.xml": build_axml(manifest_tree(nsc_ref=True)),
+    })
+    report = pd.analyze(apk)
+    assert report["pinning_status"] == "pinned"
+    assert report["network_security_config"][0]["file"] == "res/xml/network_security_config.xml"
+
+
+def test_markdown_escapes_crafted_paths(tmp_path):
+    crafted = "a`<img src=x>`b"
+    apk = make_apk(tmp_path, {f"smali/app/{crafted}.smali": b"Lokhttp3/CertificatePinner;\n" + PIN.encode()})
+    md = pd.render_markdown(pd.analyze(apk))
+    # Dynamic double-backtick fence prevents closing the code span at the inner single backtick
+    assert f"``smali/app/{crafted}.smali``" in md
+
+
+def test_output_dir_inside_target_is_not_rescanned(tmp_path, capsys):
     out = tmp_path / "reports"
     out.mkdir()
     (out / "pinning-report.md").write_text(PIN, encoding="utf-8")
     (tmp_path / "Clean.java").write_text("class Clean {}", encoding="utf-8")
-    report = pd.analyze(str(tmp_path), exclude=(str(out),))
-    assert report["pinning_status"] == "none_detected"
+    assert pd.main([str(tmp_path), "-o", str(out)]) == 0
+    written = json.loads((out / "pinning-report.json").read_text(encoding="utf-8"))
+    assert written["pinning_status"] == "none_detected"
+
+    # --json writes no report files, so files inside -o must still be scanned
+    (out / "RealPin.java").write_text(f'String p = "{PIN}";', encoding="utf-8")
+    capsys.readouterr()
+    assert pd.main([str(tmp_path), "-o", str(out), "--json"]) == 0
+    json_out = json.loads(capsys.readouterr().out)
+    assert json_out["pinning_status"] == "pinned"
 
 
-def test_cli_publishes_report_pair_atomically(tmp_path):
-    apk = make_apk(tmp_path, {"classes.dex": dex(PIN)})
+def test_cli_publishes_report_pair_atomically(tmp_path, monkeypatch):
+    apk_a = make_apk(tmp_path, {"classes.dex": dex("Lokhttp3/CertificatePinner;", PIN)}, name="a.apk")
+    apk_b = make_apk(tmp_path, {"classes.dex": dex("x")}, name="b.apk")
     out = tmp_path / "out"
-    assert pd.main([apk, "-o", str(out)]) == 0
+    assert pd.main([apk_a, "-o", str(out)]) == 0
+    orig_json = (out / "pinning-report.json").read_text(encoding="utf-8")
+    orig_md = (out / "pinning-report.md").read_text(encoding="utf-8")
+
+    real_replace = os.replace
+
+    def fail_on_md(src, dst):
+        if str(dst).endswith("pinning-report.md"):
+            raise OSError("simulated failure publishing md")
+        return real_replace(src, dst)
+
+    monkeypatch.setattr(os, "replace", fail_on_md)
+    with pytest.raises(OSError, match="simulated failure"):
+        pd.main([apk_b, "-o", str(out)])
+
+    assert (out / "pinning-report.json").read_text(encoding="utf-8") == orig_json
+    assert (out / "pinning-report.md").read_text(encoding="utf-8") == orig_md
     assert sorted(os.listdir(out)) == ["pinning-report.json", "pinning-report.md"]

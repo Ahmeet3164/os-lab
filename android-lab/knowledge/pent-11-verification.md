@@ -30,7 +30,7 @@ Command, run from `android-lab/lab`:
 python -m pytest tests/test_pinning_detector.py -v
 ```
 
-Result: **43 passed, 0 failed** (about 1 s). 11 tests were added for the review follow-ups below.
+Result: **50 passed, 0 failed** (about 1.1 s). 18 tests were added for the review follow-ups below.
 
 All fixtures are synthetic and built in memory (including a small Android binary-XML encoder used
 only by the tests), so no third-party app or live target is involved.
@@ -160,15 +160,15 @@ Trust-all / allow-all validation found: TLS may be interceptable without any byp
   lab would need an APK you are authorised to analyse.
 - Proof video (2m 40s): [PENT-11 Demo Video](https://drive.google.com/file/d/12yi-VPZ9b5-InblEiYa6tY5gFlMaPQDQ/view?usp=drive_link) (full static classification, out-of-scope rejection, and 17/17 pytest suite verification).
 
-## 7. Conclusion
+## 7. Review follow-ups (PR #173 & PR #258 automated reviews)
 
-All 43 PENT-11 tests pass and the CLI works end to end on a synthetic APK. The limitations above are
-the remaining gaps before calling this fully verified against real apps.
-
-## 7. Review follow-ups (PR #173 automated review)
-
-- NSC pin-sets only count as strong evidence when the manifest references that file (`@xml/<name>`); unreferenced or mismatched configs are weak and warned about. Identical NSC copies are deduplicated.
-- `sha1/` pins are matched with their own payload length; AXML string-pool counts are validated against chunk bounds (no unbounded loop on malformed manifests).
+- NSC pin-sets only count as strong evidence when the manifest `@xml/<name>` reference matches that `res/xml*` path; unreferenced or non-resource configs stay weak, unverified manifests/compiled resource IDs are capped below strong, and duplicate NSC contents preserve every path for reference resolution without double-scoring.
+- `sha1/` pins are matched with their own payload length; AXML string-pool counts are validated against chunk bounds (tested directly against `_parse_string_pool`).
 - Generic TLS signals (custom TrustManager without a key comparison, verify callbacks, bundled certificates, library presence) stay `low`; weak signals alone never reach `likely_pinned`, and framework markers no longer upgrade weak-only signals.
-- Unreadable, changed or oversized inputs are listed in `skipped`; `scan_complete` / `scan_truncated` are exposed and an empty result on a partial scan is `incomplete_scan`. Aggregate limits: 50,000 files and 1 GiB decompressed.
-- The output directory is excluded from directory scans, and the JSON + Markdown pair is written to a private temp dir and then published together.
+- All scanned/unreadable/decompressor-error/changed/oversized inputs count toward `MAX_TOTAL_FILES` (`50,000`) and `MAX_TOTAL_BYTES` (`1 GiB`); retained skip entries are bounded (`MAX_SKIPPED_RECORDED = 200`) while exposing `skipped_count`, `skipped_truncated`, `scan_complete`, `scan_truncated`, and `incomplete_scan` when no pins are detected.
+- Markdown rendering escapes untrusted paths/snippets with dynamic backtick fences and HTML/Markdown escaping. Non-`--json` runs exclude the output directory from scans, serialize concurrent report writers, and atomically publish/rollback JSON + Markdown pairs together.
+
+## 8. Conclusion
+
+All 50 PENT-11 tests pass and the CLI works end to end on a synthetic APK. The limitations above are
+the remaining gaps before calling this fully verified against real apps.
