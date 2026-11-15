@@ -224,9 +224,14 @@ def _managed_idb() -> str | None:
     return path if os.path.isfile(path) and os.access(path, os.X_OK) else None
 
 
+def _idb_companion() -> str | None:
+    """Homebrew's idb-companion formula installs `idb_companion` (underscore); accept both spellings."""
+    return shutil.which("idb_companion") or shutil.which("idb-companion")
+
+
 def _which(name: str) -> str | None:
     found = shutil.which(name)
-    return found or {"appium": _managed_appium, "idb": _managed_idb}.get(name, lambda: None)()
+    return found or {"appium": _managed_appium, "idb": _managed_idb, "idb-companion": _idb_companion}.get(name, lambda: None)()
 
 
 def _read(path: str) -> str:
@@ -304,12 +309,24 @@ def container_runtime() -> str | None:
 
 
 def xcode_status() -> dict:
-    """Full Xcode and an available iOS Simulator, not just the command-line tools."""
+    """Full Xcode and an available iOS Simulator, not just the command-line tools.
+
+    Detection follows ``xcode-select``/PATH, never an assumed install path, so a
+    copy of Xcode on a non-system volume is reported with its real location.
+    """
     if host_os() != "macos":
-        return {"installed": False, "iosRuntime": False, "iosDevice": False}
+        return {"installed": False, "developerDir": None, "xcodeApp": None, "iosRuntime": False, "iosDevice": False}
     installed = _capture(["xcodebuild", "-version"], timeout=5)[0] == 0
+    developer_dir = None
+    if installed:
+        code, output = _capture(["xcode-select", "-p"], timeout=5)
+        if code == 0:
+            developer_dir = output.strip() or None
+    xcode_app = None
+    if developer_dir and developer_dir.endswith("/Contents/Developer"):
+        xcode_app = developer_dir[: -len("/Contents/Developer")]
     if not installed:
-        return {"installed": False, "iosRuntime": False, "iosDevice": False}
+        return {"installed": False, "developerDir": None, "xcodeApp": None, "iosRuntime": False, "iosDevice": False}
     code, output = _capture(["xcrun", "simctl", "list", "-j", "devices", "available"], timeout=10)
     try:
         devices = json.loads(output)["devices"] if code == 0 else {}
@@ -319,7 +336,8 @@ def xcode_status() -> dict:
         ios_device = False
     code, output = _capture(["xcrun", "simctl", "list", "runtimes"], timeout=10)
     ios_runtime = code == 0 and any(line.startswith("iOS ") for line in output.splitlines())
-    return {"installed": installed, "iosRuntime": ios_runtime, "iosDevice": ios_device}
+    return {"installed": installed, "developerDir": developer_dir, "xcodeApp": xcode_app,
+            "iosRuntime": ios_runtime, "iosDevice": ios_device}
 
 
 # ── iOS Simulator panel (native macOS) ───────────────────────────────────────
@@ -385,6 +403,220 @@ def ios_screenshot() -> bytes:
             os.unlink(path)
         except OSError:
             pass
+
+
+def _os_version(value) -> str:
+    """devicectl reports an osVersion string or a {major, minor, patch} dict; both become a string."""
+    if isinstance(value, dict):
+        parts = [value.get(key) for key in ("major", "minor", "patch")]
+        return ".".join(str(part) for part in parts if part is not None)
+    return str(value or "")
+
+
+def ios_devices() -> dict:
+    """Real iOS devices (connected or paired) via `xcrun devicectl`, read-only.
+
+    This is a listing only: driving a real device needs Developer Mode on the
+    device and a signed WebDriverAgent (see ios-lab/mac/README.md), which the
+    panel deliberately does not pretend to offer.
+    """
+    if host_os() != "macos" or not _which("xcrun"):
+        return {"available": False, "reason": "Xcode and its device tooling are not usable on this Mac",
+                "devices": []}
+    fd, path = tempfile.mkstemp(suffix=".json")
+    try:
+        os.close(fd)
+        code, output = _capture(["xcrun", "devicectl", "list", "devices", "--json-output", path], timeout=15)
+        if code != 0:
+            reason = output.strip().splitlines()[-1][:200] if output.strip() else "devicectl failed"
+            return {"available": False, "reason": reason, "devices": []}
+        try:
+            with open(path, encoding="utf-8") as f:
+                data = json.load(f)
+        except (OSError, ValueError):
+            return {"available": False, "reason": "devicectl returned unreadable output", "devices": []}
+    finally:
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
+    devices = []
+    for entry in (data.get("result") or {}).get("devices") or []:
+        if not isinstance(entry, dict):
+            continue
+        # devicectl also lists simulators here; visibilityClass separates them from real hardware.
+        if (entry.get("visibilityClass") or "") == "simulators":
+            continue
+        props = entry.get("deviceProperties") or {}
+        hardware = entry.get("hardwareProperties") or {}
+        connection = entry.get("connectionProperties") or {}
+        # transportType names how the device is paired: localNetwork (Wi-Fi) vs a USB
+        # wire. A Wi-Fi-paired device stays listed even while its tunnel is down.
+        devices.append({
+            "udid": entry.get("identifier") or hardware.get("udid") or "",
+            "name": props.get("name") or "",
+            "osVersion": _os_version(props.get("osVersionNumber") or props.get("osVersion")),
+            "state": connection.get("tunnelState") or connection.get("pairingState") or "",
+            "paired": (connection.get("pairingState") or "") == "paired",
+            "transport": connection.get("transportType") or None,
+            "lastSeen": connection.get("lastConnectionDate") or None,
+        })
+    devices.sort(key=lambda d: (d["name"], d["udid"]))
+    return {"available": True, "reason": None, "devices": devices}
+
+
+def ios_device_check(udid: str) -> dict:
+    """Actively probe one device: `devicectl device info details` connects its tunnel to answer.
+
+    The passive listing reports a stale tunnelState; this is the honest
+    "is it reachable right now?" check behind the drawer's Check button.
+    """
+    if not isinstance(udid, str) or not UDID.match(udid):
+        raise PlanError("That device id does not look like a UDID")
+    if host_os() != "macos" or not _which("xcrun"):
+        return {"reachable": False, "reason": "The device tooling is not usable on this Mac"}
+    fd, path = tempfile.mkstemp(suffix=".json")
+    try:
+        os.close(fd)
+        code, output = _capture(["xcrun", "devicectl", "device", "info", "details", "--device", udid,
+                                 "--json-output", path], timeout=25)
+        if code != 0:
+            reason = output.strip().splitlines()[-1][:200] if output.strip() else "the device did not answer"
+            return {"reachable": False, "reason": reason}
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, ValueError):
+        return {"reachable": False, "reason": "devicectl returned unreadable output"}
+    finally:
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
+    result = data.get("result") or {}
+    props = result.get("deviceProperties") or {}
+    connection = result.get("connectionProperties") or {}
+    return {"reachable": True, "reason": None,
+            "name": props.get("name") or "",
+            "osVersion": _os_version(props.get("osVersionNumber") or props.get("osVersion")),
+            "developerMode": (props.get("developerModeStatus") or "") == "enabled",
+            "state": connection.get("tunnelState") or "connected"}
+
+
+#: The previous kern.cp_time reading; CPU percent is the delta between polls.
+_CPU_SAMPLE: dict = {"ticks": None}
+_CPU_WARN, _CPU_CRITICAL = 85.0, 95.0
+_MEM_WARN, _MEM_CRITICAL = 85.0, 92.0
+
+
+def _memory_pressure(run) -> dict:
+    """Total vs used RAM on macOS: vm_stat's free + inactive + speculative pages count as available."""
+    code, output = run(["sysctl", "-n", "hw.memsize"], timeout=5)
+    if code != 0:
+        return {"totalBytes": None, "usedBytes": None, "percent": None}
+    try:
+        total = int(output.strip())
+    except ValueError:
+        return {"totalBytes": None, "usedBytes": None, "percent": None}
+    code, output = run(["vm_stat"], timeout=5)
+    if code != 0:
+        return {"totalBytes": total, "usedBytes": None, "percent": None}
+    page_size = 4096
+    available = 0
+    for line in output.splitlines():
+        if "page size of" in line:
+            digits = "".join(ch for ch in line if ch.isdigit())
+            try:
+                page_size = int(digits)
+            except ValueError:
+                pass
+            continue
+        for label in ("Pages free", "Pages inactive", "Pages speculative"):
+            if line.startswith(label):
+                digits = "".join(ch for ch in line.rsplit(":", 1)[-1] if ch.isdigit())
+                try:
+                    available += int(digits) * page_size
+                except ValueError:
+                    pass
+    used = max(total - available, 0)
+    return {"totalBytes": total, "usedBytes": used,
+            "percent": round(used * 100.0 / total, 1) if total else None}
+
+
+def _cpu_ticks() -> list[int] | None:
+    """Host CPU ticks (user, system, idle, nice) via mach host_statistics64 — no subprocess.
+
+    kern.cp_time is gone on current macOS; this is the same source Activity
+    Monitor uses. Returns None honestly when the mach call fails.
+    """
+    try:
+        libc = ctypes.CDLL("/usr/lib/libSystem.B.dylib")
+        libc.mach_host_self.restype = ctypes.c_uint
+        libc.mach_host_self.argtypes = []
+        libc.host_statistics64.restype = ctypes.c_int
+        libc.host_statistics64.argtypes = [ctypes.c_uint, ctypes.c_int, ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_uint)]
+        libc.mach_port_deallocate.argtypes = [ctypes.c_uint, ctypes.c_uint]
+        host = libc.mach_host_self()
+        ticks = (ctypes.c_int * 4)()
+        count = ctypes.c_uint(4)
+        kr = libc.host_statistics64(host, 3, ticks, ctypes.byref(count))  # HOST_CPU_LOAD_INFO
+        libc.mach_port_deallocate(host, host)
+        if kr != 0:
+            return None
+        return [ticks[i] for i in range(4)]
+    except (OSError, ValueError):
+        return None
+
+
+def _cpu_percent(run=None) -> float | None:
+    """CPU busy-percent as the tick delta since the previous call (None on the first poll)."""
+    ticks = _cpu_ticks()
+    if not ticks or len(ticks) < 4:
+        return None
+    previous = _CPU_SAMPLE["ticks"]
+    _CPU_SAMPLE["ticks"] = ticks
+    if not previous:
+        return None
+    busy = [b - p for b, p in zip(ticks[:3], previous[:3])]
+    idle = ticks[3] - previous[3]
+    total = sum(busy) + idle
+    if total <= 0:
+        return None
+    return round(min(sum(busy) * 100.0 / total, 100.0), 1)
+
+
+def _simulator_process(run) -> dict:
+    """CPU and RSS of Simulator.app and its helpers; the honest proxy for what the booted device costs."""
+    code, output = run(["ps", "-axo", "comm=,%cpu=,rss="], timeout=5)
+    if code != 0:
+        return {"running": False, "cpuPercent": None, "rssBytes": None}
+    cpu, rss = 0.0, 0
+    for line in output.splitlines():
+        parts = line.strip().rsplit(None, 2)
+        if len(parts) != 3 or "Simulator.app" not in parts[0]:
+            continue
+        try:
+            cpu += float(parts[1])
+            rss += int(parts[2]) * 1024
+        except ValueError:
+            continue
+    return {"running": cpu > 0 or rss > 0, "cpuPercent": round(cpu, 1), "rssBytes": rss or None}
+
+
+def ios_resources() -> dict:
+    """Host CPU/RAM pressure plus what Simulator.app costs, for the drawer's watchdog.
+
+    CPU percent is None on the first poll (it needs a delta); memory is a
+    vm_stat approximation of Activity Monitor's "used".
+    """
+    if host_os() != "macos":
+        return {"available": False, "reason": "Resource monitoring runs on macOS only", "cpu": None, "memory": None, "simulator": None}
+    memory = _memory_pressure(_capture)
+    cpu = _cpu_percent(_capture)
+    simulator = _simulator_process(_capture)
+    return {"available": True, "reason": None,
+            "cpu": {"percent": cpu, "warn": _CPU_WARN, "critical": _CPU_CRITICAL},
+            "memory": {**memory, "warn": _MEM_WARN, "critical": _MEM_CRITICAL},
+            "simulator": simulator}
 
 
 # ── macOS app mirror ─────────────────────────────────────────────────────────
@@ -2110,6 +2342,10 @@ def plan(root: str, request: dict, host: dict | None = None) -> dict:
             picked = _validated_ios_device(root, device)
             selected = ["--device", picked["udid"]]
             effects.append(f"Boots the iOS Simulator device {picked['name']} ({picked['runtime']}) on this Mac.")
+        if action == "stop" and device not in (None, ""):
+            picked = _validated_ios_device(root, device)
+            selected = ["--device", picked["udid"]]
+            effects.append(f"Shuts down the iOS Simulator device {picked['name']} on this Mac. Other devices keep running.")
         if action == "macos-click":
             selected = [str(click["pid"]), str(click["x"]), str(click["y"])]
             effects.append(f"Brings the app (pid {click['pid']}) to the front and clicks once at "

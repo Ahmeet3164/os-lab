@@ -398,6 +398,16 @@ class LabHttpHandler(BaseHTTPRequestHandler):
             self._json(200, oslab.monitor(REPO_ROOT, parts[2], cached_host()))
         elif len(parts) == 4 and parts[:2] == ["api", "labs"] and parts[2] == "ios" and parts[3] == "simulator":
             self._json(200, oslab.ios_simulator(REPO_ROOT))
+        elif len(parts) == 4 and parts[:2] == ["api", "labs"] and parts[2] == "ios" and parts[3] == "devices":
+            self._json(200, oslab.ios_devices())
+        elif len(parts) == 5 and parts[:2] == ["api", "labs"] and parts[2] == "ios" and parts[3] == "devices" and parts[4] == "check":
+            udid = (urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query).get("udid") or [""])[0]
+            try:
+                self._json(200, oslab.ios_device_check(udid))
+            except oslab.PlanError as e:
+                self._json(400, {"error": str(e)})
+        elif len(parts) == 4 and parts[:2] == ["api", "labs"] and parts[2] == "ios" and parts[3] == "resources":
+            self._json(200, oslab.ios_resources())
         elif len(parts) == 4 and parts[:2] == ["api", "labs"] and parts[2] == "ios" and parts[3] == "screenshot":
             self._send_bytes(200, oslab.ios_screenshot(), "image/png", cache="no-store")
         elif len(parts) == 4 and parts[:2] == ["api", "labs"] and parts[2] == "macos" and parts[3] == "apps":

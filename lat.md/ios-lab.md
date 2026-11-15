@@ -62,6 +62,44 @@ frame, and read-only `/api/labs/ios/simulator` and
 `/api/labs/ios/screenshot` endpoints feed the panel's device list and live
 screen.
 
+The drawer also answers two questions the scripts never could. **Where is
+Xcode?** `xcode_status()` follows `xcode-select`/PATH (never an assumed
+install path) and now reports `developerDir` and the resolved `xcodeApp`, so a
+copy of Xcode installed on a non-system volume is shown at its real location
+(the drawer prints it; `doctor-mac.sh` prints the resolved
+`xcrun --find xcodebuild` path). **What real devices exist?** Read-only
+`GET /api/labs/ios/devices` (`ios_devices()` → `xcrun devicectl list devices
+--json-output`, `visibilityClass != "simulators"` filters the simulator rows
+out) lists paired or connected iPhones and iPads with their tunnel state.
+Listing is deliberately the whole feature for now: driving a real device needs
+Developer Mode on the device and a WebDriverAgent signed to the user's team
+for the lab's existing Appium/XCUITest stack, and real-device screenshots need
+WDA too (`simctl io` is simulator-only) — the drawer says so instead of
+offering buttons that cannot work.
+
+When the home volume is under disk pressure (`/api/cleanup/volumes` warning
+or below 20 GiB free), the drawer shows a nudge with the volume's free space
+linking to the Cleanup Lab's `/cleanup/relocation/` tab, where
+`simulators.coresimulator-devices` moves the CoreSimulator devices folder to
+another volume behind the CLN-27 symlink flow (see [[cleanup-lab]]; runtimes
+stay system-managed). The nudge is a read-only hint — it hides on fetch
+failure and never moves anything itself.
+
+The drawer also watches resources so a heavy simulator cannot stall the Mac
+unnoticed: `GET /api/labs/ios/resources` (`ios_resources()`) samples host RAM
+via `vm_stat` (free + inactive + speculative count as available), CPU busy
+percent from `host_statistics64` tick deltas between polls (None on the first
+sample — honest, not zero), and what Simulator.app and its helpers cost from
+`ps`. Meters harden at warn (85/85) and critical (92/95); two critical polls
+in a row open an alert dialog whose one-click stops still ride the console's
+previewed plan → token flow — stop every simulator (`stop-simulator.sh`), or
+stop only the device selected in the drawer (the stop action takes the same
+`--device` argument start does). A per-session arm
+(`Stop simulators automatically…`) fires that stop without the dialog when
+the threshold holds; the dialog never shows while armed. Lab-page action and
+job cards stay compact by default — the command, effects and output collapse
+behind a header toggle and output opens by itself only when a job fails.
+
 The macOS Lab page mirrors real application windows instead. The window
 list comes from CoreGraphics through ctypes (the osascript ObjC bridge is
 unstable on current macOS), captures from `screencapture -l` (Screen
