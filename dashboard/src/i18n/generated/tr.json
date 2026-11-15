@@ -2703,5 +2703,20 @@
   "Checking simulators…": "Simülatörler denetleniyor…",
   "Devices": "Aygıtlar",
   "No simulators are running.": "Çalışan simülatör yok.",
-  "Running simulators": "Çalışan simülatörler"
+  "Running simulators": "Çalışan simülatörler",
+  "Configure": "Yapılandır",
+  "Free-space checks while the console runs. Thresholds and volumes are configured in Settings.": "Konsol çalışırken boş disk alanı denetlenir. Eşikler ve birimler Ayarlar'dan yapılandırılır.",
+  "Manage bookmarks": "Yer imlerini yönet",
+  "Monitor stats": "İzleme istatistikleri",
+  "No bookmarks are marked for quick clean yet — enable quick clean in Settings.": "Henüz hızlı temizlik için işaretlenmiş yer imi yok — Ayarlar'dan hızlı temizliği etkinleştirin.",
+  "No bookmarks yet — bookmark entries on the Advanced scan page or add folders in Settings.": "Henüz yer imi yok — Gelişmiş tarama sayfasındaki ögelere yer imi ekleyin veya Ayarlar'dan klasör ekleyin.",
+  "No volumes measured yet.": "Henüz birim ölçülmedi.",
+  "One confirmed Trash run over the bookmarks marked for quick cleanup.": "Hızlı temizlik için işaretlenmiş yer imleri üzerinde onaylanmış tek bir Çöp kutusuna taşıma işlemi.",
+  "Quick clean": "Hızlı temizlik",
+  "Scan the safe categories, review the plan, then confirm. Nothing is removed during a scan.": "Güvenli kategorileri tarayın, planı gözden geçirin ve onaylayın. Tarama sırasında hiçbir şey silinmez.",
+  "Settings": "Ayarlar",
+  "The detailed cleanup tools, one click away.": "Ayrıntılı temizleme araçları, tek tık uzağınızda.",
+  "Tools & advanced": "Araçlar ve gelişmiş",
+  "bookmarks included": "yer imi dahil",
+  "measured in quick-clean bookmarks": "hızlı temizlik yer imlerinde ölçüldü"
 }

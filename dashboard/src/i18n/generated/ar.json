@@ -2703,5 +2703,20 @@
   "Checking simulators…": "جارٍ فحص المحاكيات…",
   "Devices": "الأجهزة",
   "No simulators are running.": "لا توجد محاكيات قيد التشغيل.",
-  "Running simulators": "المحاكيات قيد التشغيل"
+  "Running simulators": "المحاكيات قيد التشغيل",
+  "Configure": "إعداد",
+  "Free-space checks while the console runs. Thresholds and volumes are configured in Settings.": "فحوص المساحة الحرة أثناء تشغيل الكونسول. تُهيَّأ الحدود والمجلدات من الإعدادات.",
+  "Manage bookmarks": "إدارة العلامات المرجعية",
+  "Monitor stats": "إحصاءات المراقبة",
+  "No bookmarks are marked for quick clean yet — enable quick clean in Settings.": "لا توجد علامات مُعلَّمة للتنظيف السريع بعد — فعِّل التنظيف السريع من الإعدادات.",
+  "No bookmarks yet — bookmark entries on the Advanced scan page or add folders in Settings.": "لا توجد علامات بعد — علِّم الإدخالات في صفحة الفحص المتقدم أو أضِف مجلدات من الإعدادات.",
+  "No volumes measured yet.": "لم يُقَس أي مجلد بعد.",
+  "One confirmed Trash run over the bookmarks marked for quick cleanup.": "تشغيل واحد مؤكَّد إلى سلة المهملات على العلامات المعلَّمة للتنظيف السريع.",
+  "Quick clean": "تنظيف سريع",
+  "Scan the safe categories, review the plan, then confirm. Nothing is removed during a scan.": "افحص الفئات الآمنة، وراجِع الخطة ثم أكِّد. لا يُحذف شيء أثناء الفحص.",
+  "Settings": "الإعدادات",
+  "The detailed cleanup tools, one click away.": "أدوات التنظيف التفصيلية، على بعد نقرة واحدة.",
+  "Tools & advanced": "الأدوات والمتقدم",
+  "bookmarks included": "علامة مضمَّنة",
+  "measured in quick-clean bookmarks": "مقاس في علامات التنظيف السريع"
 }
