@@ -83,3 +83,29 @@ proven run-owned UFW addition may be removed, with ambiguous firewall state
 reported as partial recovery. Legacy/incomplete evidence is not trusted.
 Rollback tests in [[linux-lab/tests/test_rollback.py]] use temporary files
 and fake commands.
+
+## OS-24 Local .deb Installer
+
+The OS-24 script installs local Debian packages on Ubuntu.
+
+Script: `linux-lab/scripts/os-24-deb-installer.sh`
+
+### Usage
+
+```bash
+./linux-lab/scripts/os-24-deb-installer.sh ./package.deb
+```
+
+### Behavior
+
+- Requires exactly one package path.
+- Checks whether the file exists.
+- Requires a `.deb` file extension.
+- Validates the package using `dpkg-deb --info`.
+- Installs the package using `sudo apt install -y`.
+- Uses `realpath` to resolve the package's absolute path.
+
+### Safety
+
+Only install trusted `.deb` packages. Installation requires sudo
+permissions and may modify the operating system.
