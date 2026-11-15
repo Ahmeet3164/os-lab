@@ -176,7 +176,8 @@ if [ -d "$APP_DIR/widget/build/OSLabWidgets.appex" ]; then
   if [ "$NOTARIZE" = 1 ]; then
     say "re-notarizing the app (waits for Apple)"
     APP_ZIP="$(mktemp -d)/os-lab.app.zip"
-    ditto -c -k --keepCompressedName "$APP" "$APP_ZIP"
+    # --keepParent keeps os-lab.app as the archive's root entry, which notarytool expects.
+    ditto -c -k --keepParent "$APP" "$APP_ZIP"
     xcrun notarytool submit "$APP_ZIP" --key "$APPLE_API_KEY_PATH" --key-id "$APPLE_API_KEY" --issuer "$APPLE_API_ISSUER" --wait
     xcrun stapler staple "$APP"
   else
