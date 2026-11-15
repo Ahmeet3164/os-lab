@@ -16,9 +16,11 @@ ios-lab/mac/config.env
 ios-lab/mac/.sim-device
 ios-lab/mac/.appium.pid
 
-# MPT-07 lab-target build output and per-session pentest artifacts (never commit)
+# MPT-07 lab-target build output, per-session pentest artifacts and the
+# operator-owned local target allowlist (never commit)
 ios-lab/mac/pentest/lab-target/build/
 ios-lab/artifacts/pentest-frida/
+ios-lab/mac/pentest/targets.local.json
 
 # Lat build cache
 .lat-build
