@@ -2,8 +2,9 @@ name: release-win
 
 # Builds the Windows installers on a GitHub-hosted runner (free for public repositories), optionally
 # signs them through SignPath Foundation, and uploads them to the release app-v<version>.
-# Signing runs only for tag or manual builds after SignPath credentials are configured.
-# Without SignPath, tag builds are kept as artifacts instead of publishing unsigned installers.
+# Tag builds always publish: they ship unsigned (SmartScreen warns) until SignPath credentials
+# are configured, and sign automatically once they exist. Manual builds keep the explicit
+# publish and allow_unsigned inputs.
 
 on:
   push:
@@ -36,7 +37,7 @@ jobs:
     runs-on: windows-latest
     env:
       SIGN: ${{ github.event_name != 'pull_request' && vars.SIGNPATH_ORGANIZATION_ID != '' && secrets.SIGNPATH_API_TOKEN != '' }}
-      PUBLISH: ${{ (github.event_name == 'push' && vars.SIGNPATH_ORGANIZATION_ID != '' && secrets.SIGNPATH_API_TOKEN != '') || (inputs.publish && ((vars.SIGNPATH_ORGANIZATION_ID != '' && secrets.SIGNPATH_API_TOKEN != '') || inputs.allow_unsigned)) }}
+      PUBLISH: ${{ github.event_name == 'push' || (inputs.publish && ((vars.SIGNPATH_ORGANIZATION_ID != '' && secrets.SIGNPATH_API_TOKEN != '') || inputs.allow_unsigned)) }}
     steps:
       - uses: actions/checkout@v4
 
