@@ -95,7 +95,8 @@ class StoreRoundTrip(unittest.TestCase):
         One stale row (renamed catalog id, test artifact) used to make every
         add/update/remove raise ``Unknown catalog entry`` for an entry the
         request never mentioned; with catalog_ids the row is dropped, named
-        in ``error``, and the next save persists the healed list.
+        in ``error``, and the heal is persisted right away — follow-up reads
+        are clean instead of repeating the notice forever.
         """
         with tempfile.TemporaryDirectory() as base:
             env = env_state(base)
@@ -110,11 +111,29 @@ class StoreRoundTrip(unittest.TestCase):
                              ["system.user-caches"])
             self.assertIn("a", healed["error"])
             self.assertIn("no longer lists", healed["error"])
-            # Without catalog_ids nothing is dropped (fail-open read).
+            # The heal persisted: the stale row is gone from the file itself.
+            with open(os.path.join(base, "bookmarks.json"), encoding="utf-8") as handle:
+                stored = json.load(handle)
+            self.assertEqual([item["entryId"] for item in stored["bookmarks"]],
+                             ["system.user-caches"])
+            # Follow-up reads are clean — no repeated notice.
+            again = bookmarks.load(env=env, catalog_ids=ids)
+            self.assertEqual([item["entryId"] for item in again["bookmarks"]],
+                             ["system.user-caches"])
+            self.assertIsNone(again["error"])
+            # A bare load stays a fail-open read and writes nothing: on a file
+            # that still carries the stale row, both rows come back untouched.
+            bookmarks.save([
+                record("system.user-caches", 1),
+                record("a", 2),
+            ], env=env, catalog_ids=None)
             as_is = bookmarks.load(env=env)
             self.assertEqual(len(as_is["bookmarks"]), 2)
             self.assertIsNone(as_is["error"])
-            # The next add over the healed list persists the store without the row.
+            with open(os.path.join(base, "bookmarks.json"), encoding="utf-8") as handle:
+                untouched = json.load(handle)
+            self.assertEqual(len(untouched["bookmarks"]), 2)
+            # The add still appends over the healed list.
             result = bookmarks.add("dev.pip-cache", healed["bookmarks"],
                                    clock=lambda: 3000.0, catalog_ids=ids)
             self.assertEqual([item["entryId"] for item in result["bookmarks"]],

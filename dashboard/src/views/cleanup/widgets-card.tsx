@@ -57,7 +57,7 @@ export function WidgetsCard({ snapshot, reload }: { snapshot: CleanupWidgetSnaps
       <Status value={{ ok: true, text: "Widgets are a macOS feature; this machine publishes nothing." }} />}
     {valid && snapshot.platform === "macos" && !snapshot.capable &&
       <Status value={{ ok: true, text: "Publishing is idle until the installed os-lab app creates its widget container." }} />}
-    {valid && !snapshot.publish.published && snapshot.publish.reason &&
+    {valid && snapshot.capable && !snapshot.publish.published && snapshot.publish.reason &&
       <Status value={{ ok: false, text: snapshot.publish.reason }} />}
     {error && <Status value={{ ok: false, text: error }} />}
     <div className="mt-3 flex flex-wrap items-center gap-2">
