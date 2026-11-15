@@ -41,10 +41,11 @@ dashboard renders the workbench; the engine does the work.
 | Viewport presets | window size presets (mobile/tablet/desktop) | Real emulation (DPR, meta viewport quirks) is not claimed |
 | Isolated profiles | per-profile web-context data directories; `ephemeral` runs incognito | Directory isolation is honoured on Linux/WebKitGTK and Windows/WebView2; on macOS persistent data lives in the shared `WKWebsiteDataStore` — use `ephemeral` for clean sessions |
 | Navigation log | navigation + page-load handlers | Every attempted navigation is recorded |
+| Live preview + device toggle | `GET /api/web/windows/{id}/screenshot` (JPEG, base64) and `POST /api/web/windows/{id}/viewport` | macOS capture via WebKit snapshots (no Screen Recording permission); view-only — interactions happen in the real window |
 
 Deliberately out of scope for v1 (tracked in the lab TODO): Chrome session
 import, request/response body capture, protocol-level interception (a CDP
-attach mode), screenshot export.
+attach mode), non-macOS window capture, click-forwarding into the preview.
 
 ## Authorization and scope
 

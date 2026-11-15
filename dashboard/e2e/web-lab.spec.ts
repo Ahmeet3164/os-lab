@@ -19,6 +19,8 @@ const events = {
   ] as WebEvent[],
   lastSeq: 2, count: 2
 };
+/** A 1×1 JPEG so the panel's snapshot <img> renders without any real engine. */
+const SNAPSHOT_JPEG = "/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwcJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPDs0NDX/wAALCAABAAEBAREA/8QAFAABAQAAAAAAAAAAAAAAAAAAAAv/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFBEBAAAAAAAAAAAAAAAAAAAAAP/aAAwDAQACEQMRAD8AmAA//9k=";
 
 async function mockWeb(page: Page, state: WebStatus["state"] = "ready") {
   await page.route("**/api/web/status", (route) => route.fulfill({ json: { ...status, state } }));
@@ -94,4 +96,36 @@ test("injections register with a name and code", async ({ page }) => {
   await page.getByLabel("Code", { exact: true }).fill("window.__probe = true;");
   await page.getByRole("button", { name: "Register injection" }).click();
   expect(registered).toEqual([{ name: "probe", code: "window.__probe = true;" }]);
+});
+
+test("the preview panel polls snapshots and the device toggle resizes the window", async ({ page }) => {
+  await mockWeb(page);
+  const snapshots: string[] = [];
+  await page.route("**/api/web/windows/1/screenshot", (route) => {
+    snapshots.push(route.request().url());
+    return route.fulfill({ json: { ok: true, format: "jpeg", dataBase64: SNAPSHOT_JPEG } });
+  });
+  const viewports: Record<string, unknown>[] = [];
+  await page.route("**/api/web/windows/1/viewport", (route) => {
+    viewports.push(route.request().postDataJSON());
+    return route.fulfill({ json: { ok: true, applied: true, viewport: "mobile", size: [390, 844] } });
+  });
+  const history: string[] = [];
+  for (const action of ["back", "forward", "reload"]) {
+    await page.route(`**/api/web/windows/1/${action}`, (route) => {
+      history.push(action);
+      return route.fulfill({ json: { ok: true, applied: true } });
+    });
+  }
+  await page.goto("/web-lab/");
+  await page.getByRole("button", { name: "Preview panel" }).click();
+  const panel = page.getByLabel("Live preview");
+  await expect(panel).toBeVisible();
+  await expect(page.getByAltText("Live snapshot of window 1")).toBeVisible();
+  expect(snapshots.length).toBeGreaterThan(0);
+  await panel.getByLabel("Device size").selectOption("mobile");
+  await expect.poll(() => viewports).toEqual([{ viewport: "mobile" }]);
+  await panel.getByLabel("Back").click();
+  await panel.getByLabel("Forward").click();
+  expect(history).toEqual(["back", "forward"]);
 });

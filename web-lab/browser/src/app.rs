@@ -14,6 +14,7 @@ use tao::window::{Window, WindowBuilder, WindowId};
 use wry::{PageLoadEvent, WebContext, WebView, WebViewBuilder};
 
 use crate::bootstrap;
+use crate::capture::{self, CaptureSlot};
 use crate::protocol::{normalize_url, OpenWindowRequest, WindowAction};
 use crate::state::{SharedState, WindowMeta};
 
@@ -33,6 +34,11 @@ pub enum UserEvent {
         action: WindowAction,
         argument: Option<String>,
         reply: Sender<Result<bool, String>>,
+    },
+    Screenshot {
+        id: u64,
+        slot: CaptureSlot,
+        done: Sender<()>,
     },
     Shutdown,
 }
@@ -89,6 +95,9 @@ impl App {
                 argument,
                 reply,
             } => self.run_window_action(id, &action, &argument, reply),
+            UserEvent::Screenshot { id, slot, done } => {
+                self.begin_screenshot(id, slot, done);
+            }
             UserEvent::Shutdown => {
                 self.log_event(None, "engine", json!({ "message": "shutdown requested" }));
                 *control_flow = ControlFlow::Exit;
@@ -231,12 +240,14 @@ impl App {
             }
         };
 
+        let (meta_width, meta_height) = request.viewport.logical_size();
         let meta = WindowMeta {
             id,
             url,
             profile: request.profile,
             user_agent: request.user_agent,
             viewport: request.viewport.as_str().to_string(),
+            size: [meta_width as u32, meta_height as u32],
             created_at: crate::state::now_ms(),
         };
         self.log_event(
@@ -263,6 +274,34 @@ impl App {
         let _ = reply.send(Ok(id));
     }
 
+    /// Ask WebKit for a snapshot of the window's web view. The request is
+    /// dispatched here and the completion fills `slot` + pings `done` later on
+    /// this same runloop — the control thread waits, this thread never blocks.
+    fn begin_screenshot(&mut self, id: u64, slot: CaptureSlot, done: std::sync::mpsc::Sender<()>) {
+        let Some(handle) = self.windows.get(&id) else {
+            *slot.lock().expect("capture slot poisoned") = Some(Err(format!("unknown window: {id}")));
+            let _ = done.send(());
+            return;
+        };
+        let ns_view = {
+            #[cfg(target_os = "macos")]
+            {
+                use tao::platform::macos::WindowExtMacOS;
+                handle.window.ns_view()
+            }
+            #[cfg(not(target_os = "macos"))]
+            {
+                std::ptr::null_mut()
+            }
+        };
+        let outcome = unsafe { capture::begin_webview_jpeg(ns_view, slot, done) };
+        if let Err(message) = outcome {
+            // begin_* already reported its own failures into the slot, but a
+            // dispatch error here means the slot was never filled.
+            self.log_event(Some(id), "error", json!({ "capture": message }));
+        }
+    }
+
     fn run_window_action(
         &mut self,
         id: u64,
@@ -270,6 +309,10 @@ impl App {
         argument: &Option<String>,
         reply: Sender<Result<bool, String>>,
     ) {
+        if let WindowAction::Resize = action {
+            self.run_resize(id, argument.as_deref(), reply);
+            return;
+        }
         let Some(handle) = self.windows.get(&id) else {
             let _ = reply.send(Err(format!("unknown window: {id}")));
             return;
@@ -327,6 +370,9 @@ impl App {
             }
             (WindowAction::Back, _) => handle.webview.evaluate_script("history.back();"),
             (WindowAction::Forward, _) => handle.webview.evaluate_script("history.forward();"),
+            // Resize is handled above with its own early return; this arm only
+            // keeps the match exhaustive.
+            (WindowAction::Resize, _) => Ok(()),
         };
         match result {
             Ok(()) => {
@@ -336,6 +382,55 @@ impl App {
                 let _ = reply.send(Err(format!("window action failed: {error}")));
             }
         }
+    }
+
+    /// Resize the window and record the new logical size. The server already
+    /// resolved and clamped the request; this only applies it.
+    fn run_resize(&mut self, id: u64, argument: Option<&str>, reply: Sender<Result<bool, String>>) {
+        let parsed: serde_json::Value = match argument.map(serde_json::from_str) {
+            Some(Ok(value)) => value,
+            _ => {
+                let _ = reply.send(Err("resize needs width and height".to_string()));
+                return;
+            }
+        };
+        let (Some(width), Some(height)) = (
+            parsed.get("width").and_then(|value| value.as_u64()),
+            parsed.get("height").and_then(|value| value.as_u64()),
+        ) else {
+            let _ = reply.send(Err("resize needs width and height".to_string()));
+            return;
+        };
+        let (Ok(width), Ok(height)) = (u32::try_from(width), u32::try_from(height)) else {
+            let _ = reply.send(Err("resize dimensions are out of range".to_string()));
+            return;
+        };
+        let label = parsed
+            .get("viewport")
+            .and_then(|value| value.as_str())
+            .unwrap_or("custom")
+            .to_string();
+        let Some(handle) = self.windows.get(&id) else {
+            let _ = reply.send(Err(format!("unknown window: {id}")));
+            return;
+        };
+        handle.window.set_inner_size(tao::dpi::LogicalSize::new(
+            f64::from(width),
+            f64::from(height),
+        ));
+        {
+            let mut state = self.state.lock().expect("engine state poisoned");
+            if let Some(meta) = state.windows.get_mut(&id) {
+                meta.size = [width, height];
+                meta.viewport = label.clone();
+            }
+        }
+        self.log_event(
+            Some(id),
+            "viewport-changed",
+            json!({ "viewport": label, "size": [width, height] }),
+        );
+        let _ = reply.send(Ok(true));
     }
 }
 

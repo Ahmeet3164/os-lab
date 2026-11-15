@@ -2621,5 +2621,21 @@
   "Viewport": "قاب نمایش",
   "Web Lab": "Web Lab",
   "Web Lab engine readiness: cargo, make and the built engine": "آمادگی موتور Web Lab: cargo، make و موتور ساخته‌شده",
-  "Workbench": "میز کار"
+  "Workbench": "میز کار",
+  "Preview panel": "پنل پیش‌نمایش",
+  "Live preview": "پیش‌نمایش زنده",
+  "Close preview": "بستن پیش‌نمایش",
+  "Preview window": "پنجره پیش‌نمایش",
+  "Reload preview": "بازخوانی پیش‌نمایش",
+  "Forward": "جلو",
+  "Device size": "اندازه دستگاه",
+  "Viewport width": "عرض نماگاه",
+  "Viewport height": "ارتفاع نماگاه",
+  "Apply": "اعمال",
+  "custom": "سفارشی",
+  "Fit to window": "جا دادن در پنجره",
+  "Capturing…": "در حال گرفتن تصویر…",
+  "Open a window to preview it here.": "برای پیش‌نمایش، یک پنجره باز کنید.",
+  "Width": "عرض",
+  "Height": "ارتفاع"
 }

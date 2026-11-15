@@ -9,6 +9,7 @@
 
 mod app;
 mod bootstrap;
+mod capture;
 mod protocol;
 mod server;
 mod state;

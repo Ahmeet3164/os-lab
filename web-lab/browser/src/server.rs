@@ -14,7 +14,7 @@ use tiny_http::{Header, Method, Response, Server};
 use crate::app::UserEvent;
 use crate::protocol::{
     normalize_url, parse_route, EvalRequest, InjectionRequest, NavigateRequest, OpenWindowRequest,
-    ProfileRequest, Route, WindowAction,
+    ProfileRequest, Route, ViewportRequest, WindowAction,
 };
 use crate::state::SharedState;
 
@@ -160,6 +160,82 @@ fn handle(
             }
             _ => Err(ApiError::bad_request("method not allowed")),
         },
+        Route::WindowViewport { id } => {
+            let request: ViewportRequest = serde_json::from_str(body).map_err(|error| {
+                ApiError::bad_request(format!("invalid viewport request: {error}"))
+            })?;
+            let (label, width, height) = request.resolve().map_err(ApiError::bad_request)?;
+            let argument = Some(
+                json!({
+                    "width": width as u32,
+                    "height": height as u32,
+                    "viewport": label,
+                })
+                .to_string(),
+            );
+            let (reply, receiver) = channel();
+            sink.send_user_event(UserEvent::Window {
+                id,
+                action: WindowAction::Resize,
+                argument,
+                reply,
+            })
+            .map_err(|message| ApiError {
+                status: 503,
+                message,
+            })?;
+            let applied = receiver
+                .recv_timeout(REPLY_TIMEOUT)
+                .map_err(|_| ApiError {
+                    status: 503,
+                    message: "engine did not answer".into(),
+                })?
+                .map_err(ApiError::bad_request)?;
+            Ok(json!({
+                "ok": true,
+                "applied": applied,
+                "viewport": label,
+                "size": [width as u32, height as u32],
+            }))
+        }
+        Route::WindowScreenshot { id } => {
+            let slot = Arc::new(Mutex::new(None));
+            let (done, receiver) = channel();
+            sink.send_user_event(UserEvent::Screenshot {
+                id,
+                slot: Arc::clone(&slot),
+                done,
+            })
+            .map_err(|message| ApiError {
+                status: 503,
+                message,
+            })?;
+            // The main thread fills the slot and pings exactly once, whether the
+            // capture succeeded or not; this thread only waits.
+            receiver
+                .recv_timeout(REPLY_TIMEOUT)
+                .map_err(|_| ApiError {
+                    status: 503,
+                    message: "the capture did not answer in time".into(),
+                })?;
+            let outcome = slot
+                .lock()
+                .expect("capture slot poisoned")
+                .take()
+                .ok_or_else(|| ApiError {
+                    status: 503,
+                    message: "the capture answered without a result".into(),
+                })?;
+            let data_base64 = outcome.map_err(|message| ApiError {
+                status: 500,
+                message,
+            })?;
+            Ok(json!({
+                "ok": true,
+                "format": "jpeg",
+                "dataBase64": data_base64,
+            }))
+        }
         Route::WindowDelete { id } => {
             let (reply, receiver) = channel();
             sink.send_user_event(UserEvent::Close { id, reply })
@@ -403,5 +479,117 @@ mod tests {
         let request: OpenWindowRequest =
             serde_json::from_str(r#"{"url":"example.com","viewport":"mobile"}"#).unwrap();
         assert_eq!(request.viewport, Viewport::Mobile);
+    }
+
+    /// A sink that completes every dispatched command immediately, so endpoint
+    /// round-trips can be tested without a real event loop.
+    struct ReplyingSink;
+
+    impl EventSink for ReplyingSink {
+        fn send_user_event(&self, event: UserEvent) -> Result<(), String> {
+            match event {
+                UserEvent::Window { reply, .. } => {
+                    let _ = reply.send(Ok(true));
+                }
+                UserEvent::Screenshot { slot, done, .. } => {
+                    *slot.lock().unwrap() = Some(Ok("Zm9v".to_string()));
+                    let _ = done.send(());
+                }
+                UserEvent::Close { reply, .. } => {
+                    let _ = reply.send(Ok(true));
+                }
+                UserEvent::Open { reply, .. } => {
+                    let _ = reply.send(Ok(9));
+                }
+                UserEvent::Shutdown => {}
+            }
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn viewport_endpoint_round_trips_a_preset() {
+        let shared = state();
+        let reply = handle(
+            &Method::Post,
+            "/api/web/windows/4/viewport",
+            "",
+            r#"{"viewport":"mobile"}"#,
+            &shared,
+            &ReplyingSink,
+        )
+        .unwrap();
+        assert_eq!(reply["ok"], json!(true));
+        assert_eq!(reply["viewport"], json!("mobile"));
+        assert_eq!(reply["size"], json!([390, 844]));
+    }
+
+    #[test]
+    fn viewport_endpoint_refuses_half_a_pair() {
+        let shared = state();
+        let error = handle(
+            &Method::Post,
+            "/api/web/windows/4/viewport",
+            "",
+            r#"{"width":390}"#,
+            &shared,
+            &ReplyingSink,
+        )
+        .unwrap_err();
+        assert_eq!(error.status, 400);
+        let error = handle(
+            &Method::Post,
+            "/api/web/windows/4/viewport",
+            "",
+            "not json",
+            &shared,
+            &ReplyingSink,
+        )
+        .unwrap_err();
+        assert_eq!(error.status, 400);
+    }
+
+    #[test]
+    fn screenshot_endpoint_returns_the_base64_payload() {
+        let shared = state();
+        let reply = handle(
+            &Method::Get,
+            "/api/web/windows/2/screenshot",
+            "",
+            "",
+            &shared,
+            &ReplyingSink,
+        )
+        .unwrap();
+        assert_eq!(reply["ok"], json!(true));
+        assert_eq!(reply["format"], json!("jpeg"));
+        assert_eq!(reply["dataBase64"], json!("Zm9v"));
+    }
+
+    #[test]
+    fn screenshot_endpoint_reports_capture_failures() {
+        struct FailingSink;
+        impl EventSink for FailingSink {
+            fn send_user_event(&self, event: UserEvent) -> Result<(), String> {
+                if let UserEvent::Screenshot { slot, done, .. } = event {
+                    *slot.lock().unwrap() =
+                        Some(Err("window capture is macOS-only right now".to_string()));
+                    let _ = done.send(());
+                }
+                Ok(())
+            }
+        }
+        let shared = state();
+        let error = handle(
+            &Method::Get,
+            "/api/web/windows/2/screenshot",
+            "",
+            "",
+            &shared,
+            &FailingSink,
+        )
+        .unwrap_err();
+        assert_eq!(error.status, 500);
+        assert!(error.message.contains("macOS-only"));
     }
 }

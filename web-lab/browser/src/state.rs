@@ -37,6 +37,8 @@ pub struct WindowMeta {
     pub profile: String,
     pub user_agent: Option<String>,
     pub viewport: String,
+    /// Current logical size in CSS pixels; the preview panel reads it.
+    pub size: [u32; 2],
     pub created_at: u64,
 }
 

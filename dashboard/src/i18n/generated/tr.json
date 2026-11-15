@@ -2621,5 +2621,21 @@
   "Viewport": "Görünüm alanı",
   "Web Lab": "Web Lab",
   "Web Lab engine readiness: cargo, make and the built engine": "Web Lab motor hazırlığı: cargo, make ve derlenmiş motor",
-  "Workbench": "Çalışma tezgahı"
+  "Workbench": "Çalışma tezgahı",
+  "Preview panel": "Önizleme paneli",
+  "Live preview": "Canlı önizleme",
+  "Close preview": "Önizlemeyi kapat",
+  "Preview window": "Önizleme penceresi",
+  "Reload preview": "Önizlemeyi yenile",
+  "Forward": "İleri",
+  "Device size": "Cihaz boyutu",
+  "Viewport width": "Görünüm genişliği",
+  "Viewport height": "Görünüm yüksekliği",
+  "Apply": "Uygula",
+  "custom": "özel",
+  "Fit to window": "Pencereye sığdır",
+  "Capturing…": "Yakalanıyor…",
+  "Open a window to preview it here.": "Burada önizlemek için bir pencere açın.",
+  "Width": "Genişlik",
+  "Height": "Yükseklik"
 }
