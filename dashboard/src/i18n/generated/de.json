@@ -2703,5 +2703,20 @@
   "Checking simulators…": "Simulatoren werden geprüft…",
   "Devices": "Geräte",
   "No simulators are running.": "Keine Simulatoren laufen.",
-  "Running simulators": "Laufende Simulatoren"
+  "Running simulators": "Laufende Simulatoren",
+  "Configure": "Konfigurieren",
+  "Free-space checks while the console runs. Thresholds and volumes are configured in Settings.": "Freiplatzprüfungen, während die Konsole läuft. Schwellen und Volumes werden in den Einstellungen konfiguriert.",
+  "Manage bookmarks": "Lesezeichen verwalten",
+  "Monitor stats": "Monitor-Statistiken",
+  "No bookmarks are marked for quick clean yet — enable quick clean in Settings.": "Noch sind keine Lesezeichen für die Schnellreinigung markiert — aktivieren Sie die Schnellreinigung in den Einstellungen.",
+  "No bookmarks yet — bookmark entries on the Advanced scan page or add folders in Settings.": "Noch keine Lesezeichen — markieren Sie Einträge auf der Seite „Erweiterter Scan“ oder fügen Sie in den Einstellungen Ordner hinzu.",
+  "No volumes measured yet.": "Noch keine Volumes gemessen.",
+  "One confirmed Trash run over the bookmarks marked for quick cleanup.": "Ein bestätigter Papierkorb-Durchlauf über die für die Schnellreinigung markierten Lesezeichen.",
+  "Quick clean": "Schnellreinigung",
+  "Scan the safe categories, review the plan, then confirm. Nothing is removed during a scan.": "Sichere Kategorien scannen, den Plan prüfen und bestätigen. Beim Scannen wird nichts entfernt.",
+  "Settings": "Einstellungen",
+  "The detailed cleanup tools, one click away.": "Die detaillierten Bereinigungswerkzeuge, einen Klick entfernt.",
+  "Tools & advanced": "Werkzeuge & Erweitertes",
+  "bookmarks included": "Lesezeichen eingeschlossen",
+  "measured in quick-clean bookmarks": "in Schnellreinigung-Lesezeichen gemessen"
 }

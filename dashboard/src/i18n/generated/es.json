@@ -2703,5 +2703,20 @@
   "Checking simulators…": "Comprobando simuladores…",
   "Devices": "Dispositivos",
   "No simulators are running.": "No hay simuladores en ejecución.",
-  "Running simulators": "Simuladores en ejecución"
+  "Running simulators": "Simuladores en ejecución",
+  "Configure": "Configurar",
+  "Free-space checks while the console runs. Thresholds and volumes are configured in Settings.": "Comprobaciones de espacio libre mientras la consola está en ejecución. Umbrales y volúmenes se configuran en Ajustes.",
+  "Manage bookmarks": "Administrar marcadores",
+  "Monitor stats": "Estadísticas del monitor",
+  "No bookmarks are marked for quick clean yet — enable quick clean in Settings.": "Aún no hay marcadores marcados para la limpieza rápida: active la limpieza rápida en Ajustes.",
+  "No bookmarks yet — bookmark entries on the Advanced scan page or add folders in Settings.": "Aún no hay marcadores: marque entradas en la página de análisis avanzado o añada carpetas en Ajustes.",
+  "No volumes measured yet.": "Aún no se ha medido ningún volumen.",
+  "One confirmed Trash run over the bookmarks marked for quick cleanup.": "Una pasada confirmada a la Papelera sobre los marcadores marcados para la limpieza rápida.",
+  "Quick clean": "Limpieza rápida",
+  "Scan the safe categories, review the plan, then confirm. Nothing is removed during a scan.": "Analice las categorías seguras, revise el plan y confirme. Nada se elimina durante un análisis.",
+  "Settings": "Ajustes",
+  "The detailed cleanup tools, one click away.": "Las herramientas de limpieza detalladas, a un clic.",
+  "Tools & advanced": "Herramientas y avanzado",
+  "bookmarks included": "marcadores incluidos",
+  "measured in quick-clean bookmarks": "medido en marcadores de limpieza rápida"
 }

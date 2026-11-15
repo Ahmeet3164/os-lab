@@ -107,9 +107,13 @@ the lab. Lab starts require the token returned by the plan preview. See
 
 ## Source navigation
 
-Cleanup Lab navigation links to scan, results, leftovers and history in
-[[dashboard/src/views/cleanup/pages.tsx]]. The public route explains that the
-engine is local, while the local app uses typed cleanup jobs and a confirm step.
+Cleanup Lab navigation splits into the compact Dashboard (Quick clean, Clean
+and monitor stats) and a Settings tab, with the detail tabs keeping their
+routes ([[dashboard/src/views/cleanup/pages.tsx]]).
+
+Settings hosts bookmarks, permissions, the monitor configuration, widgets and
+the tools hub. The public route explains that the engine is local, while the
+local app uses typed cleanup jobs and a confirm step.
 
 [[dashboard/src/views/source/pages.tsx]] provides localized Source Lab routes and
 uses the existing shell for mobile navigation and themes. The sidebar and
