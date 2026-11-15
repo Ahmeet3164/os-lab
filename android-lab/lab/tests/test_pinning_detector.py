@@ -524,13 +524,26 @@ def test_dir_scan_enforces_aggregate_byte_budget(tmp_path, monkeypatch):
 
 
 def test_nsc_outside_res_xml_not_treated_as_referenced(tmp_path):
-    apk = make_apk(tmp_path, {
+    for bad_path in ("assets/network_security_config.xml", "xml/network_security_config.xml",
+                     "assets/res/xml/network_security_config.xml"):
+        sub = tmp_path / bad_path.replace("/", "_")
+        sub.mkdir()
+        apk = make_apk(sub, {
+            "AndroidManifest.xml": build_axml(manifest_tree(nsc_ref=True)),
+            bad_path: build_axml(nsc_tree()),
+        })
+        report = pd.analyze(apk)
+        assert report["pinning_status"] != "pinned", bad_path
+        assert methods_of(report)["network_security_config"]["confidence"] == "low", bad_path
+
+    # Resource qualifiers like res/xml-v24/ ARE valid Android xml resource directories
+    qual = tmp_path / "qual"
+    qual.mkdir()
+    apk_ok = make_apk(qual, {
         "AndroidManifest.xml": build_axml(manifest_tree(nsc_ref=True)),
-        "assets/network_security_config.xml": build_axml(nsc_tree()),
+        "res/xml-v24/network_security_config.xml": build_axml(nsc_tree()),
     })
-    report = pd.analyze(apk)
-    assert report["pinning_status"] != "pinned"
-    assert methods_of(report)["network_security_config"]["confidence"] == "low"
+    assert pd.analyze(apk_ok)["pinning_status"] == "pinned"
 
 
 def test_nsc_without_manifest_does_not_claim_pinned(tmp_path):
@@ -585,6 +598,8 @@ def test_cli_publishes_report_pair_atomically(tmp_path, monkeypatch):
     assert pd.main([apk_a, "-o", str(out)]) == 0
     orig_json = (out / "pinning-report.json").read_text(encoding="utf-8")
     orig_md = (out / "pinning-report.md").read_text(encoding="utf-8")
+    rep_via_ptr, md_via_ptr = pd.read_report_pair(str(out))
+    assert rep_via_ptr == json.loads(orig_json) and md_via_ptr == orig_md
 
     real_replace = os.replace
 
@@ -597,6 +612,8 @@ def test_cli_publishes_report_pair_atomically(tmp_path, monkeypatch):
     with pytest.raises(OSError, match="simulated failure"):
         pd.main([apk_b, "-o", str(out)])
 
+    rep_after, md_after = pd.read_report_pair(str(out))
+    assert rep_after == json.loads(orig_json) and md_after == orig_md
     assert (out / "pinning-report.json").read_text(encoding="utf-8") == orig_json
     assert (out / "pinning-report.md").read_text(encoding="utf-8") == orig_md
-    assert sorted(os.listdir(out)) == ["pinning-report.json", "pinning-report.md"]
+    assert {"pinning-report.json", "pinning-report.md", "pinning-report.latest"} <= set(os.listdir(out))

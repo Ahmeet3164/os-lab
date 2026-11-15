@@ -58,6 +58,7 @@ _ZIP_READ_ERRORS = (
     zipfile.BadZipFile, RuntimeError, OSError, EOFError, NotImplementedError, zlib.error, lzma.LZMAError,
 )
 REPORT_NAMES = ("pinning-report.json", "pinning-report.md")
+POINTER_NAME = "pinning-report.latest"
 MAX_EVIDENCE_PER_RULE = 3               # evidence snippets kept per rule
 ANDROID_NS = "http://schemas.android.com/apk/res/android"
 
@@ -65,7 +66,7 @@ SKIP_EXTENSIONS = {
     ".png", ".jpg", ".jpeg", ".gif", ".webp", ".ico", ".mp3", ".mp4", ".ogg", ".wav",
     ".ttf", ".otf", ".woff", ".woff2", ".arsc", ".ttc",
 }
-SKIP_DIRS = {".git", "node_modules", "__pycache__", "META-INF"}
+SKIP_DIRS = {".git", "node_modules", "__pycache__", "META-INF", ".runs"}
 TEXT_EXTENSIONS = {
     ".java", ".kt", ".smali", ".xml", ".json", ".js", ".txt", ".gradle", ".properties",
     ".html", ".yaml", ".yml", ".md", ".cfg", ".conf", ".dart", ".ts",
@@ -643,7 +644,7 @@ def scan_dir(state: ScanState, root_dir: str, exclude: tuple = ()) -> None:
             full = os.path.join(root, fn)
             if os.path.normcase(os.path.abspath(full)) in excluded:
                 continue
-            if fn in REPORT_NAMES:      # never re-scan our own previous reports
+            if fn in REPORT_NAMES or fn == POINTER_NAME:      # never re-scan our own previous reports or pointer
                 continue
             rel = os.path.relpath(full, root_dir)
             if _budget_exceeded(state, rel):
@@ -691,13 +692,15 @@ def _confidence(score: int, strongest: int) -> str:
     return "low"
 
 
-_XML_RES_PATH = re.compile(r"(?:^|/)(?:res/)?xml(?:-[a-zA-Z0-9_+.-]+)?/([^/]+)\.xml$", re.IGNORECASE)
+_XML_RES_PATH = re.compile(
+    r"^(?:(?:[^/]+/)?src/[^/]+/)?res/xml(?:-[a-zA-Z0-9_+.-]+)?/([^/]+)\.xml$"
+)
 
 
 def _nsc_referenced(manifest, path: str):
-    """True when manifest @xml/<name> matches a res/xml* path, False on mismatch/non-res path, None when unknown."""
+    """True when manifest @xml/<name> matches a res/xml* resource path, False on mismatch/non-res path, None when unknown."""
     norm = path.replace("\\", "/").lstrip("./")
-    m = _XML_RES_PATH.search(norm)
+    m = _XML_RES_PATH.match(norm)
     if m is None:
         return False
     stem = m.group(1)
@@ -944,8 +947,11 @@ def render_markdown(r: dict) -> str:
 
 
 def _publish_report_pair(out_dir: str, report: dict) -> tuple:
-    """Serialize writers and publish JSON + Markdown together, rolling back on failure."""
+    """Serialize writers, publish a versioned report pair, and atomically switch the latest pointer."""
     os.makedirs(out_dir, exist_ok=True)
+    runs_dir = os.path.join(out_dir, ".runs")
+    os.makedirs(runs_dir, exist_ok=True)
+    pointer_path = os.path.join(out_dir, POINTER_NAME)
     json_path = os.path.join(out_dir, REPORT_NAMES[0])
     md_path = os.path.join(out_dir, REPORT_NAMES[1])
     lock_path = os.path.join(out_dir, ".pinning.lock")
@@ -960,39 +966,102 @@ def _publish_report_pair(out_dir: str, report: dict) -> tuple:
                 raise TimeoutError(f"Timed out waiting for report lock: {lock_path}")
             time.sleep(0.05)
 
+    ver_dir = None
     tmp = None
+    committed = False
     try:
-        tmp = tempfile.mkdtemp(prefix=".pinning-", dir=out_dir)
-        tj, tm = os.path.join(tmp, REPORT_NAMES[0]), os.path.join(tmp, REPORT_NAMES[1])
-        with open(tj, "w", encoding="utf-8") as fh:
+        prev_ptr_bytes = None
+        prev_seq = 0
+        if os.path.exists(pointer_path):
+            with open(pointer_path, "rb") as fh:
+                prev_ptr_bytes = fh.read()
+            try:
+                prev_seq = int(json.loads(prev_ptr_bytes.decode("utf-8")).get("seq", 0))
+            except (ValueError, TypeError, KeyError, UnicodeDecodeError):
+                prev_seq = 0
+
+        ver_name = f"scan-{prev_seq + 1:06d}-{os.getpid()}"
+        ver_dir = os.path.join(runs_dir, ver_name)
+        os.makedirs(ver_dir, exist_ok=True)
+        vj = os.path.join(ver_dir, REPORT_NAMES[0])
+        vm = os.path.join(ver_dir, REPORT_NAMES[1])
+        md_text = render_markdown(report)
+        with open(vj, "w", encoding="utf-8") as fh:
             json.dump(report, fh, indent=2)
-        with open(tm, "w", encoding="utf-8") as fh:
-            fh.write(render_markdown(report))
+        with open(vm, "w", encoding="utf-8") as fh:
+            fh.write(md_text)
+
+        tmp = tempfile.mkdtemp(prefix=".pinning-", dir=out_dir)
+        tj = os.path.join(tmp, REPORT_NAMES[0])
+        tm = os.path.join(tmp, REPORT_NAMES[1])
+        tp = os.path.join(tmp, POINTER_NAME)
+        shutil.copy2(vj, tj)
+        shutil.copy2(vm, tm)
+        ptr_payload = {"seq": prev_seq + 1, "run": ver_name,
+                       "json": os.path.join(".runs", ver_name, REPORT_NAMES[0]),
+                       "md": os.path.join(".runs", ver_name, REPORT_NAMES[1])}
+        with open(tp, "w", encoding="utf-8") as fh:
+            json.dump(ptr_payload, fh, indent=2)
 
         backup_json = os.path.join(tmp, "prev.json")
+        backup_md = os.path.join(tmp, "prev.md")
         had_json = os.path.exists(json_path)
+        had_md = os.path.exists(md_path)
         if had_json:
             shutil.copy2(json_path, backup_json)
+        if had_md:
+            shutil.copy2(md_path, backup_md)
 
-        os.replace(tj, json_path)
         try:
+            os.replace(tp, pointer_path)
+            os.replace(tj, json_path)
             os.replace(tm, md_path)
+            committed = True
         except BaseException:
+            if prev_ptr_bytes is not None:
+                restore_p = os.path.join(tmp, "restore.latest")
+                with open(restore_p, "wb") as fh:
+                    fh.write(prev_ptr_bytes)
+                shutil.move(restore_p, pointer_path)
+            elif os.path.exists(pointer_path):
+                os.remove(pointer_path)
             if had_json and os.path.exists(backup_json):
-                os.replace(backup_json, json_path)
+                shutil.move(backup_json, json_path)
             elif os.path.exists(json_path):
                 os.remove(json_path)
+            if had_md and os.path.exists(backup_md):
+                shutil.move(backup_md, md_path)
+            elif os.path.exists(md_path):
+                os.remove(md_path)
             raise
     finally:
+        if not committed and ver_dir and os.path.isdir(ver_dir):
+            shutil.rmtree(ver_dir, ignore_errors=True)
         if tmp and os.path.isdir(tmp):
-            for leftover in os.listdir(tmp):
-                os.remove(os.path.join(tmp, leftover))
-            os.rmdir(tmp)
+            shutil.rmtree(tmp, ignore_errors=True)
         if lock_fd is not None:
             os.close(lock_fd)
             if os.path.exists(lock_path):
                 os.remove(lock_path)
     return json_path, md_path
+
+
+def read_report_pair(out_dir: str) -> tuple:
+    """Read the committed JSON + Markdown pair atomically via the single latest pointer."""
+    pointer_path = os.path.join(out_dir, POINTER_NAME)
+    if os.path.exists(pointer_path):
+        with open(pointer_path, encoding="utf-8") as fh:
+            ptr = json.load(fh)
+        jp = os.path.join(out_dir, ptr["json"])
+        mp = os.path.join(out_dir, ptr["md"])
+    else:
+        jp = os.path.join(out_dir, REPORT_NAMES[0])
+        mp = os.path.join(out_dir, REPORT_NAMES[1])
+    with open(jp, encoding="utf-8") as fh:
+        rep = json.load(fh)
+    with open(mp, encoding="utf-8") as fh:
+        md = fh.read()
+    return rep, md
 
 
 def main(argv=None) -> int:
