@@ -90,6 +90,18 @@ list with evidence, a `pinned` / `likely_pinned` / `possible` / `none_detected` 
 local files only (`make pinning APK=`); tests are in
 [[android-lab/lab/tests/test_pinning_detector.py]].
 
+### Policy-driven Interceptor runner
+
+[[android-lab/lab/hooks/tamper_policy.js]] and [[android-lab/lab/scripts/tamper_runner.py]]
+(PENT-07) drive policy-based Frida `Interceptor` hooks (`onEnter` argument inspection
+and tampering, `onLeave` return-value inspection and `retval.replace`) against the
+deterministic lab authentication harness [[android-lab/lab/tests/targets/hedef.c]].
+
+A fail-closed scope guard refuses external targets, symlink escapes, and unauthorized
+functions before any instrumentation runs. The runner supports both live Frida injection
+and an offline deterministic mode for headless CI, verified against golden-file fixtures
+in [[android-lab/lab/tests/test_tamper_runner.py]].
+
 ## Tests
 
 The lab ships a pytest suite in [[android-lab/lab/tests]].
