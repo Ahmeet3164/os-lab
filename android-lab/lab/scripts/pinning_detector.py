@@ -1013,9 +1013,9 @@ def _publish_report_pair(out_dir: str, report: dict) -> tuple:
             shutil.copy2(md_path, backup_md)
 
         try:
-            os.replace(tp, pointer_path)
             os.replace(tj, json_path)
             os.replace(tm, md_path)
+            os.replace(tp, pointer_path)
             committed = True
         except BaseException:
             if prev_ptr_bytes is not None:
