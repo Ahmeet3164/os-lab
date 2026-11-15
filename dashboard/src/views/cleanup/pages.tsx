@@ -15,12 +15,17 @@ import { MonitorBanner, MonitorCard } from "./monitor-card";
 import { BookmarkToggle, BookmarksSection } from "./bookmarks-card";
 import { OverviewCards, StorageHero, type OverviewCard } from "./overview";
 import { SpaceExplorer } from "./space-explorer";
-import type { BookmarksPayload, CleanupVolume } from "../../lib/api";
+import { RelocationCard } from "./relocation-card";
+import { WidgetsCard } from "./widgets-card";
+import type { BookmarksPayload, CleanupVolume, CleanupWidgetSnapshot } from "../../lib/api";
 
-export type CleanupPageId = "" | "scan" | "results" | "leftovers" | "history" | "space";
-export const CLEANUP_PAGES: CleanupPageId[] = ["", "scan", "results", "leftovers", "history", "space"];
+/** CLW-03: overview sections the desktop app's deep links may target. */
+const WIDGET_SECTIONS = new Set(["cleanup-widgets", "cleanup-monitor", "cleanup-permissions", "cleanup-bookmarks", "overview-review", "overview-storage"]);
+
+export type CleanupPageId = "" | "scan" | "results" | "leftovers" | "history" | "space" | "relocation";
+export const CLEANUP_PAGES: CleanupPageId[] = ["", "scan", "results", "leftovers", "history", "space", "relocation"];
 /** Any `/cleanup` route for any locale or base path, at the end of a pathname. */
-const CLEANUP_ROUTE = /\/cleanup(?:\/(scan|results|leftovers|history|space))?\/?$/;
+const CLEANUP_ROUTE = /\/cleanup(?:\/(scan|results|leftovers|history|space|relocation))?\/?$/;
 
 /**
  * CLNP-06: the cleanup route a pathname names, or null when it is not one.
@@ -95,9 +100,39 @@ function permissionTone(granted: boolean | null): { label: string; tone: "succes
 }
 
 /**
+ * The grant round-trip (the qLar lesson): the in-app page cannot open a
+ * custom-scheme link — the webview swallows that navigation — so the button
+ * names the permission and the console opens its fixed System Settings panes
+ * (modern privacy extension first, legacy pane as fallback). Failures stay
+ * inline on the record instead of disappearing.
+ */
+function GrantLink({ record }: { record: { id: string; grantUrl: string | null } }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const open = async () => {
+    setBusy(true);
+    setError("");
+    try {
+      await api.cleanupPermissionsOpen(record.id);
+    } catch (openError) {
+      setError(errorText(openError));
+    } finally {
+      setBusy(false);
+    }
+  };
+  if (!record.grantUrl) return null;
+  return <span className="ms-auto flex items-center gap-2">
+    {error && <span className="text-xs text-(--iux-danger)" role="alert">{error}</span>}
+    <button type="button" className="iux-btn text-xs" disabled={busy} onClick={() => void open()}>
+      {busy ? "Opening…" : "Open System Settings"}
+    </button>
+  </span>;
+}
+
+/**
  * CLNP-04: the read-only permission card. Every record the engine reports as
- * applicable shows its state, probe results and grant guidance; a macOS grant
- * deep link is a plain client-side anchor — the engine never opens Settings.
+ * applicable shows its state, probe results, grant guidance and the grant
+ * button that hands the deep link to the console.
  */
 function PermissionsCard({ permissions }: { permissions: CleanupPermissions | null }) {
   if (!permissions || !Array.isArray(permissions.permissions)) return null;
@@ -110,7 +145,7 @@ function PermissionsCard({ permissions }: { permissions: CleanupPermissions | nu
         <div className="flex items-center gap-2">
           <span className="text-sm font-medium">{record.name}</span>
           <Badge tone={permissionTone(record.granted).tone}>{permissionTone(record.granted).label}</Badge>
-          {record.grantUrl && <a className="iux-btn ms-auto text-xs" href={record.grantUrl}>Open System Settings</a>}
+          <GrantLink record={record} />
         </div>
         {record.results.length > 0 && <div className="mt-1 space-y-0.5">
           {record.results.map((result, index) => <p key={index} className="break-all text-xs" translate="no">
@@ -214,6 +249,7 @@ export default function CleanupPage({ page: initialPage = "" }: { page?: Cleanup
   const [history, setHistory] = useState<CleanupHistory | null>(null);
   const [permissions, setPermissions] = useState<CleanupPermissions | null>(null);
   const [bookmarks, setBookmarks] = useState<BookmarksPayload | null>(null);
+  const [widget, setWidget] = useState<CleanupWidgetSnapshot | null>(null);
   const [loading, setLoading] = useState(!PUBLIC);
   const [loadError, setLoadError] = useState("");
   const [actionError, setActionError] = useState("");
@@ -282,10 +318,34 @@ export default function CleanupPage({ page: initialPage = "" }: { page?: Cleanup
     void api.cleanupBookmarks()
       .then((payload) => { if (alive) setBookmarks(payload); })
       .catch(() => { if (alive) setBookmarks(null); });
+    // CLW-10: the widget snapshot is an optional capability — its failure
+    // degrades to an empty card instead of failing the whole load.
+    void api.cleanupWidget()
+      .then((snapshot) => { if (alive) setWidget(snapshot); })
+      .catch(() => { if (alive) setWidget(null); });
     return () => { alive = false; };
   }, []);
 
+  // The grant round-trip ends in System Settings, so re-probe the permission
+  // records when this page regains focus — the state chips must flip without
+  // a manual reload. The probes stay read-only (the FDA folders deny silently),
+  // and a failure keeps the already-loaded card.
+  useEffect(() => {
+    if (PUBLIC) return;
+    const reprobe = () => {
+      if (document.visibilityState !== "visible") return;
+      void api.cleanupPermissions().then(setPermissions).catch(() => {});
+    };
+    window.addEventListener("focus", reprobe);
+    document.addEventListener("visibilitychange", reprobe);
+    return () => {
+      window.removeEventListener("focus", reprobe);
+      document.removeEventListener("visibilitychange", reprobe);
+    };
+  }, []);
+
   const reloadBookmarks = () => { void api.cleanupBookmarks().then(setBookmarks).catch(() => {}); };
+  const reloadWidget = () => { void api.cleanupWidget().then(setWidget).catch(() => {}); };
   const bookmarkedIds = new Set((bookmarks?.bookmarks ?? []).map((item) => item.entryId));
 
   /** CLNP-21: a capability card either navigates a tab or scrolls to its section. */
@@ -345,6 +405,38 @@ export default function CleanupPage({ page: initialPage = "" }: { page?: Cleanup
     event.preventDefault();
     navigateTo(next, url.pathname !== window.location.pathname);
   }
+
+  // CLW-03: the desktop app drives these globals — oslab:// deep links land
+  // as __oslabNavigate (a tab id like "scan/" or a section id) and the
+  // widget's quick-clean intent lands as __oslabQuickClean, which follows
+  // the same plan → confirm flow as the Bookmarks card's button.
+  useEffect(() => {
+    const host = window as unknown as {
+      __oslabNavigate?: (route: string) => void;
+      __oslabQuickClean?: () => void;
+    };
+    host.__oslabNavigate = (route: string) => {
+      const id = route.replace(/\/+$/, "");
+      if (WIDGET_SECTIONS.has(id)) {
+        if (page !== "") navigateTo("");
+        requestAnimationFrame(() => document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" }));
+        return;
+      }
+      navigateTo(id as CleanupPageId);
+    };
+    host.__oslabQuickClean = () => {
+      void api.cleanupBookmarkQuickClean()
+        .then(({ job }) => {
+          setActive(job);
+          setJobs((old) => [job, ...old.filter((row) => row.id !== job.id)]);
+          setBookmarkConfirm(true);
+        })
+        .catch((error) => setActionError(errorText(error)));
+    };
+    // The closures must track the latest navigateTo/page state, so this runs
+    // after every render instead of declaring dependencies.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  });
 
   useEffect(() => {
     if (!active || active.state !== "running") return;
@@ -423,7 +515,7 @@ export default function CleanupPage({ page: initialPage = "" }: { page?: Cleanup
 
   const tabs: { id: CleanupPageId; label: string; path: string }[] = [
     { id: "", label: "Dashboard", path: "" }, { id: "space", label: "Space Explorer", path: "space/" }, { id: "scan", label: "Advanced scan", path: "scan/" }, { id: "results", label: "Results", path: "results/" },
-    { id: "leftovers", label: "Leftovers", path: "leftovers/" }, { id: "history", label: "History", path: "history/" }
+    { id: "leftovers", label: "Leftovers", path: "leftovers/" }, { id: "history", label: "History", path: "history/" }, { id: "relocation", label: "Relocation", path: "relocation/" }
   ];
   return <AppShell activeId={`cleanup-${page || "scan"}`}>
     <TopBar title="Cleanup Lab" icon={<BroomIcon size={20} />} />
@@ -449,6 +541,7 @@ export default function CleanupPage({ page: initialPage = "" }: { page?: Cleanup
           </Section>}
           {page === "" && status?.state === "ready" && <PermissionsCard permissions={permissions} />}
           {page === "" && !PUBLIC && <MonitorCard monitor={monitor} volumes={volumes} reload={monitorReload} />}
+          {page === "" && !PUBLIC && <WidgetsCard snapshot={widget} reload={reloadWidget} />}
           {page === "" && !PUBLIC && <BookmarksSection bookmarks={bookmarks} reload={reloadBookmarks}
             onQuickClean={(job) => { setActive(job); setJobs((old) => [job, ...old.filter((row) => row.id !== job.id)]); setBookmarkConfirm(true); }}
             onCatalogChanged={() => { void api.cleanupCatalog().then((catalog) => setEntries(catalog.entries)).catch(() => {}); }} />}
@@ -647,8 +740,10 @@ export default function CleanupPage({ page: initialPage = "" }: { page?: Cleanup
           {(status?.platform?.id === "linux" || status?.platform?.id === "windows") && <CrossPlatformLeftovers />}
           </>}
           {page === "space" && <SpaceExplorer scanHref={link("scan/")} />}
+          {page === "relocation" && <RelocationCard now={now} />}
           {page === "history" && <Section title="Audit history" description="Verified cleanup runs stored on this computer.">
             {!history?.entries.length ? <Empty>No cleanup runs recorded yet.</Empty> : history.entries.map((entry) =>
+              "totals" in entry.result ?
               <div key={entry.id} className="border-b border-(--iux-border) py-3 text-sm">
                 <div className="flex items-center gap-2">
                   <strong>Run #{entry.id}</strong>
@@ -665,6 +760,15 @@ export default function CleanupPage({ page: initialPage = "" }: { page?: Cleanup
                     </div>)}
                   </div>
                 </details>
+              </div> :
+              <div key={entry.id} className="border-b border-(--iux-border) py-3 text-sm">
+                <div className="flex items-center gap-2">
+                  <strong>Run #{entry.id}</strong>
+                  <Badge>Relocation</Badge>
+                  <span dir="ltr" className="ms-auto tabular-nums">{bytes(entry.result.bytesRelocated)}</span>
+                </div>
+                <p className="mt-1 break-all text-xs text-(--iux-muted-foreground)" translate="no">{entry.result.entryId} · {entry.result.action} · {entry.result.cancelled ? "cancelled" : entry.result.status === "completed" ? "completed" : "failed"}</p>
+                <p className="break-all text-xs text-(--iux-muted-foreground)" translate="no">{entry.result.storePath || entry.result.error}</p>
               </div>)}
           </Section>}
         </>}
