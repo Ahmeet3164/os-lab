@@ -55,7 +55,7 @@ the finding and the decision are in the session log.
 | CLN-24 | merged | [#148](https://github.com/keyvanarasteh/os-lab/pull/148) | 547f0a92 | — | catalog signatures behind CLN-07 sweep | none |
 | CLN-25 | merged | [#146](https://github.com/keyvanarasteh/os-lab/pull/146) | e5dfac27 | source label wired into cleanup results | engine and dashboard payloads ready | none |
 | CLN-26 | pending | — | — | — | — | none |
-| CLN-27 | in review (this PR) | [#172](https://github.com/keyvanarasteh/os-lab/pull/172) | — | `/cleanup/` relocation card (dashboard layer) | stacked on CLN-28 (uses its volume inventory) | none |
+| CLN-27 | in review (this PR) | [#172](https://github.com/keyvanarasteh/os-lab/pull/172) | — | `/cleanup/relocation/` tab (dashboard layer) landed with `simulators.coresimulator-devices` | stacked on CLN-28 (uses its volume inventory); engine console layer already merged | none |
 | CLN-28 | merged | [#170](https://github.com/keyvanarasteh/os-lab/pull/170) | c10d5ad9 | `/cleanup/` volumes card (dashboard layer) | console + engine landed per the layer split | none |
 | CLN-29 | pending | — | — | — | — | none |
 | CLNP-01…05 | in review | [#214](https://github.com/keyvanarasteh/os-lab/pull/214) | — | OS notification plumbing (desktop app) | engine + dashboard landed together | none |
@@ -823,3 +823,17 @@ console surface, desktop-app bridge and release embedding, landed on
   `cleanup-widgets.spec.ts`.
 * Release: `release-mac.sh` embed + re-sign + re-notarize + updater rebuild;
   PR dry run compiles the widget targets.
+
+**2026-11-15 — CLN-27 (dashboard layer).** The `/cleanup/relocation/` tab
+ships the CLN-27 handoff: status rows (path + Local folder / Linked /
+Interrupted chips from the relocatable/interrupted flags), a destination
+select from the volume inventory, plan preview behind a confirm dialog naming
+the entry, destination and the symlink fact, per-step run progress with
+cancel, restore/relink on linked rows, and relocation rows on History.
+`simulators.coresimulator-devices` joins as the first `simulators` family
+entry — CoreSimulator devices, `cleanable: false`, owning processes Simulator
+and Xcode — so simulator device data can move off the OS disk (runtimes stay
+system-managed). 26 strings × 7 locales, `cleanup-relocation.spec.ts`; the
+engine suite's pre-existing Windows-seam failures on POSIX hosts (ntpath
+isabs/normpath vs a POSIX filesystem inside the `platform="windows"` test
+seams) are unchanged by this work and tracked for their own fix.
