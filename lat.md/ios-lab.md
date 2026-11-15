@@ -149,6 +149,17 @@ the computer-use runtimes share, with the guardrails intact:
   deliberately no arm tool — the human arms from the dashboard. `macos_task`
   runs a scripted sequence (max 25 steps) with one audit row per step for
   reproducible security reports.
+- **Cleanup panel audit** — [[ios-lab/mac/cleanup-panel-verify.sh]]
+  (`make -C ios-lab mac-cleanup-verify`) reproduces the 2026-11-15 cleaner
+  audit against the running desktop app: it discovers the console port from
+  the spawned `web_ui.py` process, probes every `/api/cleanup/*` endpoint the
+  panel reads (flagging the Space Explorer 404 fixed in PR #248 instead of
+  failing), runs the default and full 64-entry measurement scans, and writes
+  a dated report under `ios-lab/artifacts/`. `BOOKMARK=1` applies the
+  quick-clean bookmark policy — low-risk entries of at least 50 MB, largest
+  first, capped at 8; high/medium-risk and privacy entries stay in the
+  plan → confirm flow. `RECORD=1` wraps the run in a `screencapture` video;
+  [[ios-lab/mac/README-cleanup-verify.md]] documents the manual runbook.
 
 ## Research
 
