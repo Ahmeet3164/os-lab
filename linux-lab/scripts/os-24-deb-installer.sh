@@ -29,4 +29,10 @@ sudo apt install -y "$(
 	eealpath "$DEB_FILE"
 )"
 
+PACKAGE_NAME=$(dpkg-deb -f "$DEB_FILE" Package)
+
+if [ "$(dpkg-query -W -f='${Status}' "$PACKAGE_NAME" 2>/dev/null)" != "install ok installed" ]; then
+    echo "Hata: Paket kurulumu dogrulanamadi: $PACKAGE_NAME"
+    exit 1
+fi
 echo "Paket kurulumu tamamlandi"
