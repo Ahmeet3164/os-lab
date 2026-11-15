@@ -57,6 +57,17 @@ the local signed release command remains `app/scripts/release-mac.sh --publish`.
 Never commit certificate or key files. The workflow writes the temporary key into the runner's
 private temporary directory and the runner is discarded after the job.
 
+## Telegram notifications
+
+The release workflows (`release-mac`, `release-win`, `release-linux`) and `updater-manifest`
+report their outcome to Telegram when the repository secrets `TELEGRAM_BOT_TOKEN` (a bot token
+from [@BotFather](https://t.me/BotFather)) and `TELEGRAM_CHAT_ID` (the chat to post into) are
+set; send the bot any message and read `getUpdates` once to learn the chat id. Without the
+secrets the reporting step skips silently and nothing else changes. Reports cover real builds
+only — tag and manual runs — never pull-request dry runs, and the scheduled 20-minute
+safety-net runs of `updater-manifest` stay quiet. A Telegram failure never fails the release:
+the send step continues on error.
+
 ## Windows signing setup
 
 Follow [SIGNING.md](SIGNING.md) to enroll the project in SignPath Foundation and configure
