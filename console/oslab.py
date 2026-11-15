@@ -1711,9 +1711,9 @@ def web_lab_status(host: dict) -> dict:
         engine = None
     binary = bool(engine and engine.get("binary"))
     reqs = [
-        _req("cargo", "Rust (Cargo)", tools.get("cargo"), hint="Install Rust via rustup (https://rustup.rs)"),
-        _req("make", "Make", tools.get("make")),
-        _req("bash", "Bash", tools.get("bash")),
+        _req("cargo", "Rust (Cargo)", tools.get("cargo"), required=not binary, hint="Install Rust via rustup (https://rustup.rs)"),
+        _req("make", "Make", tools.get("make"), required=not binary),
+        _req("bash", "Bash", tools.get("bash"), required=not binary),
     ]
     state = "ready"
     reasons: list[str] = []
