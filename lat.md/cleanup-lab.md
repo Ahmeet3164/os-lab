@@ -281,6 +281,11 @@ One typed bookmark per catalog entry — never a raw path — lives in
 [[cleanup-lab/engine/cleanup_lab/bookmarks.py]], with priority ordering, a
 quick-clean flag, a Trash-only `autoCleanHook` and a `sizeAlert` threshold.
 
+Loads that know the catalog drop rows naming entries it no longer lists and
+name them in `error` — one stale row used to 409 every add, update and
+remove with `Unknown catalog entry` for an entry the request never named;
+the next successful save persists the healed store.
+
 `plan_entry_ids()` filters by flag in priority order and refuses the
 catalog's never-preselect risk classes with per-entry reasons. Quick clean
 (`POST /api/cleanup/bookmarks/quick-clean`) runs the existing plan →

@@ -824,6 +824,37 @@ def test_bookmark_endpoints_are_typed_and_catalog_bound(monkeypatch, tmp_path):
     assert caught.value.status == 404
 
 
+def test_a_stale_bookmark_row_no_longer_bricks_adds(monkeypatch, tmp_path):
+    """One store row naming an entry the catalog no longer lists used to make
+    every add 409 with "Unknown catalog entry: <that row>" — the live 0.3.7
+    console hit exactly this with a leftover test row. Loads that know the
+    catalog now drop and name such rows, and the next add persists the healed
+    store."""
+    _bookmark_env(monkeypatch, tmp_path)
+    import json as _json
+    state = tmp_path / "state"
+    state.mkdir(parents=True, exist_ok=True)
+    (state / "bookmarks.json").write_text(_json.dumps({
+        "version": 1,
+        "bookmarks": [
+            {"entryId": "a", "createdAt": 1001.0, "priority": 1},
+            {"entryId": "system.user-caches", "createdAt": 1002.0, "priority": 2},
+        ],
+    }))
+    api = cleanup_api.CleanupAPI(REPO_ROOT)
+    # The read side reports the dropped row instead of hiding it.
+    listed = api.get("/api/cleanup/bookmarks", {})
+    assert [item["entryId"] for item in listed["bookmarks"]] == ["system.user-caches"]
+    assert "no longer lists" in (listed["error"] or "")
+    # The add no longer 409s, and its save persists the healed store.
+    report = api.post("/api/cleanup/bookmarks", {"entryId": "developers.npm"})
+    assert report["error"] is None
+    ids = [item["entryId"] for item in report["bookmarks"]]
+    assert ids == ["system.user-caches", "developers.npm"]
+    healed = _json.loads((state / "bookmarks.json").read_text())
+    assert [item["entryId"] for item in healed["bookmarks"]] == ids
+
+
 def test_quick_clean_builds_a_trash_plan_from_flagged_bookmarks(monkeypatch, tmp_path):
     _bookmark_env(monkeypatch, tmp_path)
     api = cleanup_api.CleanupAPI(REPO_ROOT)
