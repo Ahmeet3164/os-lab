@@ -344,11 +344,12 @@ behind it is [[cleanup-lab/engine/cleanup_lab/explorer.py]].
 is `null` and the dashboard omits the purgeable segment — purgeable is
 never guessed. The `/cleanup/` dashboard renders the overview: a readiness
 chip and last-scan note in the page head, the storage hero (segmented
-used/available bar), the Review-cleanup CTA and grouped capability card
-grids tied to live readiness. The five cleanup tabs plus the new
-`space` tab navigate in place (island-internal `pushState`/`popstate`
-router; static routes and Public Pages URLs unchanged; core data fetched
-once per session, per-tab data live).
+used/available bar), the Quick clean and Clean cards and, on the Settings
+tab, the grouped capability card grids tied to live readiness. The
+Dashboard, Settings and detail tabs (including the `space` tab) navigate
+in place (island-internal `pushState`/`popstate` router; static routes and
+Public Pages URLs unchanged; core data fetched once per session, per-tab
+data live).
 
 [[cleanup-lab/engine/cleanup_lab/explorer.py]] walks a parent-summed size
 tree read-only (lstat only, symlinks never followed, hard links counted
@@ -402,7 +403,8 @@ consumes it once on window focus with a 120-second max age, then drives
 `window.__oslabQuickClean`, which follows the dashboard's plan → confirm →
 run flow. `oslab://` deep links register through tauri-plugin-deep-link and
 land as whitelisted routes in `window.__oslabNavigate` (tab ids or overview
-section ids).
+section ids, each section id retargeting to the tab that hosts it:
+permissions, widgets and bookmarks live on Settings).
 
 ### Release embedding (CLW-08/09)
 
@@ -418,8 +420,24 @@ documented in [[docs/debug-widget-build.md]].
 
 ## Dashboard pages
 
-[[dashboard/src/views/cleanup/pages.tsx]] renders the dashboard at `/cleanup/`:
-scan, suggestions, plan review, confirmation, progress and a result summary.
+[[dashboard/src/views/cleanup/pages.tsx]] splits the dashboard at `/cleanup/`
+into a compact main view and a Settings tab.
+
+The main view keeps only the
+cleaning actions and the stats around them: the storage hero, the Quick clean
+card (one confirmed Trash run over the bookmarks flagged for quick clean,
+stating the reason when none are flagged), the Clean card (scan, the
+Recommended / More-safe presets, plan review, confirmation, progress) and the
+latest clean report, plus a compact read-only Monitor stats card
+([[dashboard/src/views/cleanup/monitor-card.tsx]] exports `MonitorStatsCard`;
+thresholds and volumes are configured in Settings). The Settings tab at
+`/cleanup/settings/` hosts the Bookmarks section, the Permissions card, the
+full Background monitor card, the Desktop widgets card and the capability
+card grid that links to the detail tools. The detail routes — Space Explorer,
+Advanced scan, Results, Leftovers, History, Relocation — keep their routes and
+behavior; the shared tab row renders on the Settings and detail pages, the
+local main page reaches Settings through the page-head action, and Public
+Pages keeps the full tab row without engine calls.
 
 Its confirmation opens the shared native dialog (focus containment,
 Escape/backdrop close, focus return) that lists ready items with sizes and

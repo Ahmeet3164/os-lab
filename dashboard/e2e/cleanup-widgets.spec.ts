@@ -52,7 +52,7 @@ test("the widgets card renders the snapshot preview and republishes", async ({ p
     publishes.push(Date.now());
     await route.fulfill({ json: WIDGET });
   });
-  await page.goto("/cleanup/");
+  await page.goto("/cleanup/settings/");
   await expect(page.getByRole("heading", { name: "Desktop widgets" }).first()).toBeVisible();
   // The preview mirrors the widget's content.
   await expect(page.getByText("Ready to clean")).toBeVisible();
@@ -69,7 +69,7 @@ test("the widgets card renders the snapshot preview and republishes", async ({ p
 
 test("a not-capable machine states the honest reason", async ({ page }) => {
   await mockConsole(page, { ...WIDGET, capable: false, publish: { published: false, path: null, reason: "The widget container is not available here." } });
-  await page.goto("/cleanup/");
+  await page.goto("/cleanup/settings/");
   await expect(page.getByRole("heading", { name: "Desktop widgets" }).first()).toBeVisible();
   await expect(page.getByText("Publishing is idle until the installed os-lab app creates its widget container.")).toBeVisible();
   await expect(page.getByText("not published")).toBeVisible();
@@ -80,14 +80,15 @@ test("a not-capable machine states the honest reason", async ({ page }) => {
 
 test("an empty payload degrades instead of crashing the island", async ({ page }) => {
   await mockConsole(page, {});
-  await page.goto("/cleanup/");
+  await page.goto("/cleanup/settings/");
   await expect(page.getByRole("heading", { name: "Desktop widgets" }).first()).toBeVisible();
   await expect(page.getByText("The widget snapshot appears after the first publish.")).toBeVisible();
 });
 
 test("the overview card scrolls to the widgets section", async ({ page }) => {
   await mockConsole(page);
-  await page.goto("/cleanup/");
+  // The capability grid moved to the Settings tab with the cards it navigates to.
+  await page.goto("/cleanup/settings/");
   await expect(page.getByRole("heading", { name: "Desktop widgets" }).first()).toBeVisible();
   await page.getByRole("button", { name: /Desktop widgets/ }).click();
   await expect(page.locator("#cleanup-widgets")).toBeInViewport();
@@ -101,8 +102,9 @@ test("the app globals drive deep links and the quick-clean review", async ({ pag
   await page.evaluate(() => (window as unknown as { __oslabNavigate?: (route: string) => void }).__oslabNavigate?.("scan/"));
   await expect(page).toHaveURL(/\/cleanup\/scan\/$/);
   // Deep link back to a section: overview page + scrolled section.
+  // The widgets section moved to the Settings tab; the section id stays the deep-link target.
   await page.evaluate(() => (window as unknown as { __oslabNavigate?: (route: string) => void }).__oslabNavigate?.("cleanup-widgets"));
-  await expect(page).toHaveURL(/\/cleanup\/$/);
+  await expect(page).toHaveURL(/\/cleanup\/settings\/$/);
   await expect(page.locator("#cleanup-widgets")).toBeInViewport();
   // The widget's quick-clean intent builds the plan and opens the review dialog.
   await page.evaluate(() => { (window as unknown as { __e2eMarker?: number }).__e2eMarker = 7; });
