@@ -99,9 +99,39 @@ function permissionTone(granted: boolean | null): { label: string; tone: "succes
 }
 
 /**
+ * The grant round-trip (the qLar lesson): the in-app page cannot open a
+ * custom-scheme link — the webview swallows that navigation — so the button
+ * names the permission and the console opens its fixed System Settings panes
+ * (modern privacy extension first, legacy pane as fallback). Failures stay
+ * inline on the record instead of disappearing.
+ */
+function GrantLink({ record }: { record: { id: string; grantUrl: string | null } }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const open = async () => {
+    setBusy(true);
+    setError("");
+    try {
+      await api.cleanupPermissionsOpen(record.id);
+    } catch (openError) {
+      setError(errorText(openError));
+    } finally {
+      setBusy(false);
+    }
+  };
+  if (!record.grantUrl) return null;
+  return <span className="ms-auto flex items-center gap-2">
+    {error && <span className="text-xs text-(--iux-danger)" role="alert">{error}</span>}
+    <button type="button" className="iux-btn text-xs" disabled={busy} onClick={() => void open()}>
+      {busy ? "Opening…" : "Open System Settings"}
+    </button>
+  </span>;
+}
+
+/**
  * CLNP-04: the read-only permission card. Every record the engine reports as
- * applicable shows its state, probe results and grant guidance; a macOS grant
- * deep link is a plain client-side anchor — the engine never opens Settings.
+ * applicable shows its state, probe results, grant guidance and the grant
+ * button that hands the deep link to the console.
  */
 function PermissionsCard({ permissions }: { permissions: CleanupPermissions | null }) {
   if (!permissions || !Array.isArray(permissions.permissions)) return null;
@@ -114,7 +144,7 @@ function PermissionsCard({ permissions }: { permissions: CleanupPermissions | nu
         <div className="flex items-center gap-2">
           <span className="text-sm font-medium">{record.name}</span>
           <Badge tone={permissionTone(record.granted).tone}>{permissionTone(record.granted).label}</Badge>
-          {record.grantUrl && <a className="iux-btn ms-auto text-xs" href={record.grantUrl}>Open System Settings</a>}
+          <GrantLink record={record} />
         </div>
         {record.results.length > 0 && <div className="mt-1 space-y-0.5">
           {record.results.map((result, index) => <p key={index} className="break-all text-xs" translate="no">
@@ -293,6 +323,24 @@ export default function CleanupPage({ page: initialPage = "" }: { page?: Cleanup
       .then((snapshot) => { if (alive) setWidget(snapshot); })
       .catch(() => { if (alive) setWidget(null); });
     return () => { alive = false; };
+  }, []);
+
+  // The grant round-trip ends in System Settings, so re-probe the permission
+  // records when this page regains focus — the state chips must flip without
+  // a manual reload. The probes stay read-only (the FDA folders deny silently),
+  // and a failure keeps the already-loaded card.
+  useEffect(() => {
+    if (PUBLIC) return;
+    const reprobe = () => {
+      if (document.visibilityState !== "visible") return;
+      void api.cleanupPermissions().then(setPermissions).catch(() => {});
+    };
+    window.addEventListener("focus", reprobe);
+    document.addEventListener("visibilitychange", reprobe);
+    return () => {
+      window.removeEventListener("focus", reprobe);
+      document.removeEventListener("visibilitychange", reprobe);
+    };
   }, []);
 
   const reloadBookmarks = () => { void api.cleanupBookmarks().then(setBookmarks).catch(() => {}); };
