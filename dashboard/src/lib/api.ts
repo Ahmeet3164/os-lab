@@ -183,6 +183,14 @@ export interface IosDevicesInfo {
   reason: string | null;
   devices: IosRealDevice[];
 }
+/** Host CPU/RAM pressure plus the Simulator.app cost, for the drawer's watchdog. */
+export interface IosResources {
+  available: boolean;
+  reason: string | null;
+  cpu: { percent: number | null; warn: number; critical: number } | null;
+  memory: { totalBytes: number | null; usedBytes: number | null; percent: number | null; warn: number; critical: number } | null;
+  simulator: { running: boolean; cpuPercent: number | null; rssBytes: number | null } | null;
+}
 export interface MacWindow {
   windowId: number;
   pid: number;
@@ -634,6 +642,10 @@ export const api = {
   monitor: (lab: LabId) => call<LabMonitor>(`/api/labs/${lab}/monitor`),
   iosSimulator: () => call<IosSimulatorInfo>(`/api/labs/ios/simulator`),
   iosDevices: () => call<IosDevicesInfo>(`/api/labs/ios/devices`),
+  /** Active reachability probe for one device: devicectl connects its tunnel to answer. */
+  iosDeviceCheck: (udid: string) =>
+    call<{ reachable: boolean; reason?: string | null; name?: string; osVersion?: string; developerMode?: boolean; state?: string }>(`/api/labs/ios/devices/check?udid=${encodeURIComponent(udid)}`),
+  iosResources: () => call<IosResources>(`/api/labs/ios/resources`),
   iosScreenshotUrl: "/api/labs/ios/screenshot",
   macosApps: () => call<MacAppsInfo>("/api/labs/macos/apps"),
   macosAppScreenshotUrl: (windowId: number) => `/api/labs/macos/apps/${windowId}/screenshot`,

@@ -2674,5 +2674,18 @@
   "GiB free": "GiB boş",
   "Show details": "Ayrıntıları göster",
   "Hide details": "Ayrıntıları gizle",
-  "Paired": "Eşleştirildi"
+  "Paired": "Eşleştirildi",
+  "Simulator app": "Simülatör uygulaması",
+  "System memory": "Sistem belleği",
+  "System CPU": "Sistem CPU",
+  "System resources are running low": "Sistem kaynakları azalıyor",
+  "The simulator will lag. Stop simulators to free memory and CPU.": "Simülatör takılacak. Bellek ve CPU boşaltmak için simülatörleri durdurun.",
+  "Stop all simulators": "Tüm simülatörleri durdur",
+  "Stop the selected device": "Seçili cihazı durdur",
+  "Dismiss": "Kapat",
+  "Stop simulators automatically when the system runs out of resources": "Sistem kaynakları tükendiğinde simülatörleri otomatik durdur",
+  "Check": "Denetle",
+  "unreachable": "ulaşılamıyor",
+  "Developer Mode is off on this device.": "Bu cihazda Geliştirici Modu kapalı.",
+  "reachable": "erişilebilir"
 }

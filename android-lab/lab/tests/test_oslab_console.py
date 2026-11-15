@@ -519,3 +519,57 @@ def test_idb_companion_is_found_under_its_real_name(monkeypatch):
     # The ready gate needs both halves: the managed client plus the companion.
     monkeypatch.setattr(oslab, "_managed_idb", lambda: "/Users/test/.oslab/idb/bin/idb")
     assert oslab._which("idb") == "/Users/test/.oslab/idb/bin/idb"
+
+
+# ── Resource watchdog: host CPU/RAM pressure plus what Simulator.app costs ──
+
+def test_cpu_percent_is_the_tick_delta_between_polls(monkeypatch):
+    monkeypatch.setattr(oslab, "_CPU_SAMPLE", {"ticks": [100, 0, 100, 700]})
+    monkeypatch.setattr(oslab, "_cpu_ticks", lambda: [110, 0, 110, 780])
+    # busy delta 20 of 100 total ticks → 20%
+    assert oslab._cpu_percent() == 20.0
+    monkeypatch.setattr(oslab, "_cpu_ticks", lambda: None)
+    assert oslab._cpu_percent() is None
+
+
+def test_cpu_percent_is_none_before_the_first_sample(monkeypatch):
+    monkeypatch.setattr(oslab, "_CPU_SAMPLE", {"ticks": None})
+    monkeypatch.setattr(oslab, "_cpu_ticks", lambda: [1, 2, 3, 4])
+    assert oslab._cpu_percent() is None
+
+
+def test_memory_pressure_parses_vm_stat(monkeypatch):
+    def fake_run(args, timeout=5):
+        if args[:1] == ["sysctl"]:
+            return 0, "16000000000\n"
+        return 0, (
+            "Mach Virtual Memory Statistics: (page size of 16384 bytes)\n"
+            "Pages free: 100000.\n"
+            "Pages active: 400000.\n"
+            "Pages inactive: 100000.\n"
+            "Pages speculative: 100000.\n"
+        )
+    memory = oslab._memory_pressure(fake_run)
+    # available = (100000 + 100000 + 100000) * 16384 → used = 16e9 - 4.9152e9
+    assert memory["totalBytes"] == 16000000000
+    assert memory["usedBytes"] == 16000000000 - 300000 * 16384
+    assert memory["percent"] == round(memory["usedBytes"] * 100.0 / 16000000000, 1)
+
+
+def test_simulator_process_sums_its_helpers_only():
+    def fake_run(args, timeout=5):
+        assert args[:1] == ["ps"]
+        return 0, (
+            "/Applications/Simulator.app/Contents/MacOS/Simulator 30.0 100000\n"
+            "/Applications/Simulator.app/Contents/XcodePrivateFrameworks/SimulatorHelper 20.0 50000\n"
+            "/Applications/Safari.app/Contents/MacOS/Safari 90.0 9000000\n"
+        )
+    sim = oslab._simulator_process(fake_run)
+    assert sim["running"] is True
+    assert sim["cpuPercent"] == 50.0
+    assert sim["rssBytes"] == 150000 * 1024
+
+
+def test_ios_resources_refuses_off_macos(monkeypatch):
+    monkeypatch.setattr(oslab, "host_os", lambda: "linux")
+    assert oslab.ios_resources()["available"] is False

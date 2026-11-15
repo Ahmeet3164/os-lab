@@ -2674,5 +2674,18 @@
   "GiB free": "GiB حرة",
   "Show details": "إظهار التفاصيل",
   "Hide details": "إخفاء التفاصيل",
-  "Paired": "مقترن"
+  "Paired": "مقترن",
+  "Simulator app": "تطبيق المحاكي",
+  "System memory": "ذاكرة النظام",
+  "System CPU": "معالج النظام",
+  "System resources are running low": "موردات النظام على وشك النفاد",
+  "The simulator will lag. Stop simulators to free memory and CPU.": "سيتعثر المحاكي. أوقف المحاكيات لتحرير الذاكرة والمعالج.",
+  "Stop all simulators": "إيقاف جميع المحاكيات",
+  "Stop the selected device": "إيقاف الجهاز المحدد",
+  "Dismiss": "تجاهل",
+  "Stop simulators automatically when the system runs out of resources": "أوقف المحاكيات تلقائيًا عندما تنفد موردات النظام",
+  "Check": "تحقق",
+  "unreachable": "لا يمكن الوصول",
+  "Developer Mode is off on this device.": "وضع المطوّر متوقف على هذا الجهاز.",
+  "reachable": "يمكن الوصول"
 }

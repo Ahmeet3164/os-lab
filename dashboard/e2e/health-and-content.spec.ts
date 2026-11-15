@@ -171,6 +171,60 @@ test("the simulator drawer lists real devices and skips the low-disk nudge when 
   await expect(page.getByText("System disk is running low. Simulator device data can move to another volume from the Cleanup Lab.")).toHaveCount(0);
 });
 
+test("the resource watchdog opens the alert and can stop all simulators", async ({ page }) => {
+  await mockApi(page, "macos");
+  await page.route("**/api/labs/ios/simulator", (route) => route.fulfill({ json: {
+    available: true, configuredDevice: "", runtimes: ["iOS 27.2"],
+    devices: [{ udid: "UDID-1", name: "iPhone 17", runtime: "iOS 27.2", state: "Booted" }], booted: []
+  } }));
+  await page.route("**/api/labs/ios/resources", (route) => route.fulfill({ json: {
+    available: true, reason: null,
+    cpu: { percent: 40.0, warn: 85, critical: 95 },
+    memory: { totalBytes: 16 * 1024 ** 3, usedBytes: Math.round(15.5 * 1024 ** 3), percent: 96.9, warn: 85, critical: 92 },
+    simulator: { running: true, cpuPercent: 55.0, rssBytes: 3 * 1024 ** 3 }
+  } }));
+  await page.route("**/api/labs/plan", (route) => route.fulfill({ json: {
+    plan: { id: "p1", lab: "ios", action: "stop", display: "bash stop", effects: [], privileged: false, provider: "native-macos", timeoutSec: 300, runnable: true },
+    token: "tok-1"
+  } }));
+  await page.route("**/api/labs/start", (route) => route.fulfill({ json: { id: "j1", kind: "run", state: "running", request: {}, progress: null, result: null, error: null } }));
+  await page.goto("/labs/ios/");
+  await page.getByRole("button", { name: "Simulator", exact: true }).click();
+  // Two critical polls open the alert; the meters show the pressure first.
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.getByText("System resources are running low")).toBeVisible({ timeout: 20000 });
+  await expect(page.getByText("15.5 GiB / 16.0 GiB")).toBeVisible();
+  await dialog.getByRole("button", { name: "Stop all simulators" }).click();
+  await expect(page.getByText("Simulators stopped.")).toBeVisible();
+  // The drawer itself is role=dialog; assert the alert's own content is gone.
+  await expect(page.getByText("System resources are running low")).toHaveCount(0);
+});
+
+test("the armed auto-stop fires without the alert", async ({ page }) => {
+  await mockApi(page, "macos");
+  await page.route("**/api/labs/ios/simulator", (route) => route.fulfill({ json: {
+    available: true, configuredDevice: "", runtimes: ["iOS 27.2"],
+    devices: [{ udid: "UDID-1", name: "iPhone 17", runtime: "iOS 27.2", state: "Booted" }], booted: []
+  } }));
+  await page.route("**/api/labs/ios/resources", (route) => route.fulfill({ json: {
+    available: true, reason: null,
+    cpu: { percent: 30.0, warn: 85, critical: 95 },
+    memory: { totalBytes: 16 * 1024 ** 3, usedBytes: Math.round(15.6 * 1024 ** 3), percent: 97.5, warn: 85, critical: 92 },
+    simulator: { running: true, cpuPercent: 70.0, rssBytes: 3 * 1024 ** 3 }
+  } }));
+  await page.route("**/api/labs/plan", (route) => route.fulfill({ json: {
+    plan: { id: "p1", lab: "ios", action: "stop", display: "bash stop", effects: [], privileged: false, provider: "native-macos", timeoutSec: 300, runnable: true },
+    token: "tok-1"
+  } }));
+  await page.route("**/api/labs/start", (route) => route.fulfill({ json: { id: "j1", kind: "run", state: "running", request: {}, progress: null, result: null, error: null } }));
+  await page.goto("/labs/ios/");
+  await page.evaluate(() => window.localStorage.setItem("oslab.ios.autostop", "1"));
+  await page.reload();
+  await page.getByRole("button", { name: "Simulator", exact: true }).click();
+  await expect(page.getByText("Simulators were stopped automatically to free memory and CPU.")).toBeVisible({ timeout: 20000 });
+  await expect(page.getByText("System resources are running low")).toHaveCount(0);
+});
+
 test("the low-disk nudge offers the relocation tab when the home volume is under pressure", async ({ page }) => {
   await mockApi(page, "macos");
   await page.route("**/api/labs/ios/simulator", (route) => route.fulfill({ json: {

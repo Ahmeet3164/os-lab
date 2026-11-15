@@ -2674,5 +2674,18 @@
   "GiB free": "GiB frei",
   "Show details": "Details anzeigen",
   "Hide details": "Details ausblenden",
-  "Paired": "Gekoppelt"
+  "Paired": "Gekoppelt",
+  "Simulator app": "Simulator-App",
+  "System memory": "Systemspeicher",
+  "System CPU": "System-CPU",
+  "System resources are running low": "Die Systemressourcen werden knapp",
+  "The simulator will lag. Stop simulators to free memory and CPU.": "Der Simulator wird ruckeln. Stoppen Sie Simulatoren, um Speicher und CPU freizugeben.",
+  "Stop all simulators": "Alle Simulatoren stoppen",
+  "Stop the selected device": "Das ausgewählte Gerät stoppen",
+  "Dismiss": "Schließen",
+  "Stop simulators automatically when the system runs out of resources": "Simulatoren automatisch stoppen, wenn die Systemressourcen erschöpft sind",
+  "Check": "Prüfen",
+  "unreachable": "nicht erreichbar",
+  "Developer Mode is off on this device.": "Der Entwicklermodus ist auf diesem Gerät aus.",
+  "reachable": "erreichbar"
 }

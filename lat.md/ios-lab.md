@@ -85,6 +85,21 @@ another volume behind the CLN-27 symlink flow (see [[cleanup-lab]]; runtimes
 stay system-managed). The nudge is a read-only hint — it hides on fetch
 failure and never moves anything itself.
 
+The drawer also watches resources so a heavy simulator cannot stall the Mac
+unnoticed: `GET /api/labs/ios/resources` (`ios_resources()`) samples host RAM
+via `vm_stat` (free + inactive + speculative count as available), CPU busy
+percent from `host_statistics64` tick deltas between polls (None on the first
+sample — honest, not zero), and what Simulator.app and its helpers cost from
+`ps`. Meters harden at warn (85/85) and critical (92/95); two critical polls
+in a row open an alert dialog whose one-click stops still ride the console's
+previewed plan → token flow — stop every simulator (`stop-simulator.sh`), or
+stop only the device selected in the drawer (the stop action takes the same
+`--device` argument start does). A per-session arm
+(`Stop simulators automatically…`) fires that stop without the dialog when
+the threshold holds; the dialog never shows while armed. Lab-page action and
+job cards stay compact by default — the command, effects and output collapse
+behind a header toggle and output opens by itself only when a job fails.
+
 The macOS Lab page mirrors real application windows instead. The window
 list comes from CoreGraphics through ctypes (the osascript ObjC bridge is
 unstable on current macOS), captures from `screencapture -l` (Screen
