@@ -8,7 +8,7 @@ manually without publishing, to inspect its build artifacts.
 | Workflow | Output | Automatic tag publishing |
 |---|---|---|
 | `release-linux` | amd64 and arm64 Debian, RPM and AppImage packages, with SHA-256 files | yes |
-| `release-win` | x64 NSIS and MSI, with SHA-256 files | after SignPath is configured |
+| `release-win` | x64 NSIS and MSI, with SHA-256 files | yes, unsigned until SignPath is configured |
 | `release-mac` | universal signed and notarized DMG, with SHA-256 file | after Apple secrets and `MACOS_RELEASE_CI_ENABLED=true` are set |
 | `updater-manifest` | signed artifact URLs for the in-app updater | manual, after all platform installers are published |
 
@@ -70,10 +70,12 @@ the send step continues on error.
 
 ## Windows signing setup
 
-Follow [SIGNING.md](SIGNING.md) to enroll the project in SignPath Foundation and configure
-`SIGNPATH_API_TOKEN` and `SIGNPATH_ORGANIZATION_ID`. The workflow verifies both Authenticode
-signatures before publishing. A valid signature helps establish trust; SmartScreen reputation may
-still take time to build. Unsigned builds remain available as workflow artifacts for inspection.
+Until SignPath is configured, every `app-v*` tag publishes unsigned installers (SmartScreen
+warns) and the release notes state the code-signing policy. Follow [SIGNING.md](SIGNING.md) to
+enroll the project in SignPath Foundation and configure `SIGNPATH_API_TOKEN` and
+`SIGNPATH_ORGANIZATION_ID`; from the next tag on, the workflow signs through SignPath, verifies
+both Authenticode signatures and publishes those instead, with no workflow change. A valid
+signature helps establish trust; SmartScreen reputation may still take time to build.
 
 ## Release order
 
