@@ -721,6 +721,15 @@ def _bookmark_book(root):
     return _module(root, "bookmarks")
 
 
+def _bookmark_catalog_ids(root):
+    """Today's catalog ids, or None when the catalog cannot be read (fail-open:
+    bookmark rows the catalog no longer lists are then kept, as before)."""
+    try:
+        return {entry["id"] for entry in _module(root, "catalog").load(root)}
+    except Exception:
+        return None
+
+
 def publish_widget(root):
     """CLW-04: refresh the macOS widget snapshot after a state change.
 
@@ -973,7 +982,7 @@ class CleanupAPI:
                 raise CleanupError(500, "Audit history is unavailable: {0}".format(exc)) from exc
         if path == "/api/cleanup/bookmarks":
             _query(query)
-            loaded = _bookmark_book(self.root).load()
+            loaded = _bookmark_book(self.root).load(catalog_ids=_bookmark_catalog_ids(self.root))
             return {"bookmarks": _bookmark_entries(self.root, loaded), "error": loaded["error"]}
         if path == "/api/cleanup/widget":
             # CLW-02: the widget snapshot — one read-only fold of the lab's
@@ -1102,7 +1111,7 @@ class CleanupAPI:
             if entry_id not in catalog_ids:
                 raise CleanupError(400, "Unknown detector id: {0}".format(entry_id))
             try:
-                loaded = bookmarks_mod.load()
+                loaded = bookmarks_mod.load(catalog_ids=catalog_ids)
                 result = bookmarks_mod.add(entry_id, loaded["bookmarks"], clock=time.time, catalog_ids=catalog_ids)
             except bookmarks_mod.BookmarksError as exc:
                 raise CleanupError(409, str(exc)) from exc
@@ -1118,7 +1127,7 @@ class CleanupAPI:
             if not changes:
                 raise CleanupError(400, "An update names at least one change")
             try:
-                loaded = bookmarks_mod.load()
+                loaded = bookmarks_mod.load(catalog_ids=_bookmark_catalog_ids(self.root))
                 result = bookmarks_mod.update(entry_id, changes, loaded["bookmarks"])
             except bookmarks_mod.BookmarksError as exc:
                 raise CleanupError(400, str(exc)) from exc
@@ -1131,7 +1140,7 @@ class CleanupAPI:
                 raise CleanupError(400, "entryId must name a bookmarked entry")
             bookmarks_mod = _bookmark_book(self.root)
             try:
-                loaded = bookmarks_mod.load()
+                loaded = bookmarks_mod.load(catalog_ids=_bookmark_catalog_ids(self.root))
                 result = bookmarks_mod.remove(entry_id, loaded["bookmarks"])
             except bookmarks_mod.BookmarksError as exc:
                 raise CleanupError(404, str(exc)) from exc
@@ -1140,7 +1149,7 @@ class CleanupAPI:
         if path == "/api/cleanup/bookmarks/quick-clean":
             _object_body(body, "bookmarks-quick-clean")
             bookmarks_mod = _bookmark_book(self.root)
-            loaded = bookmarks_mod.load()
+            loaded = bookmarks_mod.load(catalog_ids=_bookmark_catalog_ids(self.root))
             if loaded["error"]:
                 raise CleanupError(500, loaded["error"])
             try:
