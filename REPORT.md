@@ -41,3 +41,11 @@ Result: `Status: install ok installed`
 
 ## Conclusion
 The OS-24 installer was implemented and tested successfully on Ubuntu Server. The script validates local Debian packages before installation and verifies the installation result.
+
+## What I Learned
+
+During this project, I learned how to fork an open-source repository,
+create a Git branch, commit changes, and push them to GitHub.
+
+I also learned how to create a Pull Request, test a Bash script,
+and document the results using VERIFY.md and REPORT.md.
