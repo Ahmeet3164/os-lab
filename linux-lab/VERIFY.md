@@ -1,3 +1,69 @@
+# OS-17 SSH Connection Troubleshooter — Verification
+
+## Environment
+- Operating System: Windows 11
+- Terminal: Git Bash
+- Language: Python 3
+- Task: OS-17
+
+## Manual Tests
+
+### Test 1 — Connection Timeout
+Command:
+`python linux-lab/scripts/ssh_troubleshooter.py "Connection timed out"`
+
+Expected result: `TIMEOUT`
+
+Actual result: `TIMEOUT`
+
+Status: PASS
+
+### Test 2 — Authentication Failure
+Command:
+`python linux-lab/scripts/ssh_troubleshooter.py "Permission denied"`
+
+Expected result: `AUTHENTICATION`
+
+Actual result: `AUTHENTICATION`
+
+Status: PASS
+
+### Test 3 — Loopback Address
+Command:
+`python linux-lab/scripts/ssh_troubleshooter.py "127.0.1.1"`
+
+Expected result: `LOOPBACK`
+
+Actual result: `LOOPBACK`
+
+Status: PASS
+
+### Test 4 — Firewall Block
+Command:
+`python linux-lab/scripts/ssh_troubleshooter.py "Firewall blocked"`
+
+Expected result: `FIREWALL`
+
+Actual result: `FIREWALL`
+
+Status: PASS
+
+### Test 5 — Wrong Network Adapter
+Command:
+`python linux-lab/scripts/ssh_troubleshooter.py "Wrong adapter"`
+
+Expected result: `ADAPTER`
+
+Actual result: `ADAPTER`
+
+Status: PASS
+
+## Conclusion
+All five manual SSH error classification tests passed successfully.
+
+The script identifies common SSH connection problems and provides troubleshooting suggestions.
+
+Note: These tests verify message classification, not live SSH connectivity.
 # OS-21 Dogrulama (Verification) — Boot-Time Python Service Starter (systemd)
 
 ## 1. Calistirma Komutlari
