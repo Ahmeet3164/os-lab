@@ -954,6 +954,21 @@ def test_custom_entries_are_validated_once_then_addressed_by_id(monkeypatch, tmp
     assert caught.value.status == 400
 
 
+def test_the_explorer_roots_are_served_over_get():
+    """CLNP-23: the Space Explorer opens with a GET; the route must live in get().
+
+    The route shipped in post(), so the dashboard's GET fell through to the
+    generic 404 ("Cleanup Lab endpoint not found") and the tab errored out.
+    """
+    api = cleanup_api.CleanupAPI(REPO_ROOT)
+    payload = api.get("/api/cleanup/explorer/roots", {})
+    assert isinstance(payload["roots"], list) and payload["roots"]
+    for entry in payload["roots"]:
+        assert entry["id"] and entry["name"]
+        assert entry["source"] == "deep-roots"
+        assert isinstance(entry["available"], bool)
+
+
 def test_the_widget_endpoint_returns_the_snapshot_and_publishes(tmp_path, monkeypatch):
     """CLW-02: one read-only fold, published into the (overridden) container."""
     group = tmp_path / "group"

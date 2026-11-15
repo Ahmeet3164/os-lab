@@ -988,6 +988,12 @@ class CleanupAPI:
         if path == "/api/cleanup/jobs":
             _query(query)
             return {"jobs": JOBS.list()}
+        if path == "/api/cleanup/explorer/roots":
+            # CLNP-23: the read-only root list the Space Explorer opens with.
+            # The dashboard GETs this; it used to live in post(), which both
+            # 404'd the GET and NameError'd on _query's missing variable.
+            _query(query)
+            return {"roots": _module(self.root, "explorer").roots(self.root)}
         if path.startswith("/api/cleanup/jobs/"):
             _query(query)
             parts = path.strip("/").split("/")
@@ -1197,9 +1203,6 @@ class CleanupAPI:
                     pass
             publish_widget(self.root)
             return result
-        if path == "/api/cleanup/explorer/roots":
-            _query(query)
-            return {"roots": _module(self.root, "explorer").roots(self.root)}
         if path == "/api/cleanup/explorer/scan":
             _object_body(body, "explorer-scan")
             return JOBS.start_explorer(self.root, body)
