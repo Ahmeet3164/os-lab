@@ -45,12 +45,12 @@ test("the workbench drives a running engine: windows, injections and the event l
   await page.goto("/web-lab/");
   await expect(page.getByRole("main").getByRole("heading", { name: "Web Lab" })).toBeVisible();
   await expect(page.getByText("Running", { exact: true })).toBeVisible();
-  await expect(page.getByText("https://example.com/", { exact: true })).toBeVisible();
+  await expect(page.getByRole("main").getByText("https://example.com/", { exact: true })).toBeVisible();
   await expect(page.getByText("canary", { exact: true })).toBeVisible();
   await expect(page.locator("ol li").filter({ hasText: "eval-result" })).toContainText("42");
-  await page.getByLabel("Address", { exact: true }).fill("https://os-lab.dev");
+  await page.getByRole("main").getByLabel("Address", { exact: true }).fill("https://os-lab.dev");
   await page.getByLabel("Viewport").selectOption("mobile");
-  await page.getByRole("button", { name: "Open window" }).click();
+  await page.getByRole("main").getByRole("button", { name: "Open window" }).click();
   expect(opened).toEqual([{ url: "https://os-lab.dev", profile: "default", viewport: "mobile", user_agent: null }]);
 });
 
@@ -117,8 +117,12 @@ test("the preview panel polls snapshots and the device toggle resizes the window
       return route.fulfill({ json: { ok: true, applied: true } });
     });
   }
+  const navigations: { url: string }[] = [];
+  await page.route("**/api/web/windows/1/navigate", (route) => {
+    navigations.push(route.request().postDataJSON());
+    return route.fulfill({ json: { ok: true, applied: true } });
+  });
   await page.goto("/web-lab/");
-  await page.getByRole("button", { name: "Preview panel" }).click();
   const panel = page.getByLabel("Live preview");
   await expect(panel).toBeVisible();
   await expect(page.getByAltText("Live snapshot of window 1")).toBeVisible();
@@ -128,4 +132,21 @@ test("the preview panel polls snapshots and the device toggle resizes the window
   await panel.getByLabel("Back").click();
   await panel.getByLabel("Forward").click();
   expect(history).toEqual(["back", "forward"]);
+
+  // In-panel address bar navigation
+  const addressInput = panel.getByLabel("Address");
+  await addressInput.fill("https://qlar.qrofessor.com/auth/2fa");
+  await panel.getByRole("button", { name: "Go" }).click();
+  expect(navigations).toEqual([{ url: "https://qlar.qrofessor.com/auth/2fa" }]);
+
+  // Panel expand and restore toggle
+  await panel.getByLabel("Expand panel").click();
+  await expect(panel.getByLabel("Restore panel")).toBeVisible();
+  await panel.getByLabel("Restore panel").click();
+
+  // Close panel to return to workbench-only mode, then re-open
+  await panel.getByLabel("Close preview").click();
+  await expect(panel).not.toBeVisible();
+  await page.getByRole("button", { name: "Preview panel" }).click();
+  await expect(panel).toBeVisible();
 });

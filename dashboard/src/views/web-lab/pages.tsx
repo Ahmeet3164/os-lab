@@ -1,5 +1,14 @@
 import { useEffect, useRef, useState } from "react";
-import { ArrowLeftIcon, ArrowRightIcon, ArrowsClockwiseIcon, GlobeIcon, XIcon } from "@phosphor-icons/react";
+import {
+  ArrowLeftIcon,
+  ArrowRightIcon,
+  ArrowsClockwiseIcon,
+  CornersInIcon,
+  CornersOutIcon,
+  GlobeIcon,
+  PlusIcon,
+  XIcon
+} from "@phosphor-icons/react";
 import { AppShell, labHref } from "../../shell/app-shell";
 import { TopBar } from "../../shell/top-bar";
 import { Badge, Empty, IconButton, PageHead, Section, Status } from "../../components/ui";
@@ -26,8 +35,9 @@ export default function WebLabPage() {
   const [events, setEvents] = useState<WebEvent[]>([]);
   const cursor = useRef(0);
   // The live-preview panel: a docked right pane showing polled snapshots of one
-  // engine window, with the device-size toggle that resizes it.
-  const [panelOpen, setPanelOpen] = useState(false);
+  // engine window, with the device-size toggle that resizes it. Open by default.
+  const [panelOpen, setPanelOpen] = useState(true);
+  const [panelExpanded, setPanelExpanded] = useState(false);
   const [panelTarget, setPanelTarget] = useState("");
 
   const { data, error: loadError, reload } = usePoll<
@@ -87,7 +97,7 @@ export default function WebLabPage() {
   return <AppShell activeId="web-lab">
     <TopBar title="Web Lab" icon={<GlobeIcon size={20} />} />
     <div className="flex w-full items-start">
-      <main className={panelOpen && ready ? "min-w-0 flex-1 p-4 sm:p-6" : "mx-auto flex w-full max-w-5xl flex-col gap-5 p-4 sm:p-6"}>
+      <main className={panelOpen && ready ? (panelExpanded ? "hidden" : "min-w-0 flex-1 p-4 sm:p-6") : "mx-auto flex w-full max-w-5xl flex-col gap-5 p-4 sm:p-6"}>
         <PageHead icon={<GlobeIcon size={22} />} title="Web Lab" description="Drive a real embedded browser window, inject JavaScript before page scripts and on demand, and read what pages expose."
           actions={ready ? <button type="button" className="iux-btn" aria-pressed={panelOpen} onClick={() => setPanelOpen((open) => !open)}>Preview panel</button> : undefined} />
         {loadError && <Status value={{ ok: false, text: loadError }} />}
@@ -203,7 +213,18 @@ export default function WebLabPage() {
           </div>
         </>}
         </main>
-        {panelOpen && ready ? <PreviewPanel windows={windows} targetId={panelTarget} onTarget={setPanelTarget} busy={busy} run={run} onClose={() => setPanelOpen(false)} /> : null}
+        {panelOpen && ready ? (
+          <PreviewPanel
+            windows={windows}
+            targetId={panelTarget}
+            onTarget={setPanelTarget}
+            busy={busy}
+            run={run}
+            onClose={() => setPanelOpen(false)}
+            expanded={panelExpanded}
+            onToggleExpand={() => setPanelExpanded((v) => !v)}
+          />
+        ) : null}
       </div>
     </AppShell>;
 }
@@ -258,9 +279,10 @@ const SNAPSHOT_WIDTH_CAP = 1440;
  * chosen size; "Fit to window" scales the image, turning it off shows the
  * pixels 1:1 with scrolling.
  */
-function PreviewPanel({ windows, targetId, onTarget, busy, run, onClose }: {
+function PreviewPanel({ windows, targetId, onTarget, busy, run, onClose, expanded, onToggleExpand }: {
   windows: WebWindowState[]; targetId: string; onTarget: (id: string) => void;
   busy: boolean; run: (action: () => Promise<unknown>) => Promise<void>; onClose: () => void;
+  expanded?: boolean; onToggleExpand?: () => void;
 }) {
   const [preset, setPreset] = useState<Viewport | "custom">("responsive");
   const [customWidth, setCustomWidth] = useState("");
@@ -268,6 +290,7 @@ function PreviewPanel({ windows, targetId, onTarget, busy, run, onClose }: {
   const [fit, setFit] = useState(true);
   const [shotUrl, setShotUrl] = useState<string | null>(null);
   const [shotError, setShotError] = useState("");
+  const [addressInput, setAddressInput] = useState("");
   const shotRef = useRef<string | null>(null);
   const target = windows.find((item) => String(item.id) === targetId) ?? null;
   const id = target?.id ?? Number(targetId);
@@ -276,6 +299,10 @@ function PreviewPanel({ windows, targetId, onTarget, busy, run, onClose }: {
     if (!windows.length) return;
     if (!windows.some((item) => String(item.id) === targetId)) onTarget(String(windows[0].id));
   }, [windows, targetId, onTarget]);
+
+  useEffect(() => {
+    if (target?.url) setAddressInput(target.url);
+  }, [target?.url, target?.id]);
 
   const hasTarget = Boolean(target);
   useEffect(() => {
@@ -329,52 +356,196 @@ function PreviewPanel({ windows, targetId, onTarget, busy, run, onClose }: {
   };
 
   const size = target?.size ?? null;
-  return <aside aria-label="Live preview" className="sticky top-0 flex h-screen w-[26rem] shrink-0 flex-col border-l border-(--iux-border) bg-(--iux-background)">
-    <header className="flex items-center gap-2 border-b border-(--iux-border) px-4 py-3">
-      <h2 className="text-sm font-semibold">Live preview</h2>
-      <IconButton label="Close preview" onClick={onClose} className="ml-auto"><XIcon size={14} weight="bold" /></IconButton>
-    </header>
-    <div className="flex flex-col gap-3 border-b border-(--iux-border) p-4 text-sm">
-      <div className="flex items-center gap-2">
-        <select className="iux-input min-w-0 flex-1" aria-label="Preview window" value={targetId}
-          onChange={(event) => onTarget(event.target.value)}>
-          {windows.map((item) => <option key={item.id} value={String(item.id)}>#{item.id} — {item.url}</option>)}
-        </select>
+  return (
+    <aside
+      aria-label="Live preview"
+      className={
+        expanded
+          ? "flex h-screen w-full min-w-0 flex-1 flex-col bg-(--iux-background)"
+          : "sticky top-0 flex h-screen w-[28rem] xl:w-[32rem] shrink-0 flex-col border-l border-(--iux-border) bg-(--iux-background)"
+      }
+    >
+      <header className="flex items-center gap-1 border-b border-(--iux-border) bg-(--iux-muted)/30 px-2 py-1.5 text-xs">
+        <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
+          {windows.map((item) => {
+            const active = String(item.id) === targetId;
+            let host = item.url;
+            try {
+              const u = new URL(item.url);
+              host = u.hostname || item.url;
+            } catch {}
+            return (
+              <div
+                key={item.id}
+                className={`group flex items-center gap-1.5 rounded-t border-t-2 px-2.5 py-1 transition-colors ${
+                  active
+                    ? "border-primary bg-(--iux-background) font-medium text-(--iux-foreground) shadow-xs"
+                    : "border-transparent bg-transparent text-(--iux-muted-foreground) hover:bg-(--iux-muted)/60 hover:text-(--iux-foreground)"
+                }`}
+              >
+                <button
+                  type="button"
+                  className="flex min-w-0 items-center gap-1 truncate text-left text-xs"
+                  onClick={() => onTarget(String(item.id))}
+                  title={item.url}
+                >
+                  <GlobeIcon size={12} className="shrink-0" />
+                  <span className="max-w-[120px] truncate">{host}</span>
+                </button>
+                <button
+                  type="button"
+                  className="rounded p-0.5 text-(--iux-muted-foreground) hover:bg-(--iux-muted) hover:text-(--iux-foreground)"
+                  title="Close"
+                  aria-label="Close"
+                  disabled={busy}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    void run(() => api.webCloseWindow(item.id));
+                  }}
+                >
+                  <XIcon size={10} weight="bold" />
+                </button>
+              </div>
+            );
+          })}
+          <button
+            type="button"
+            className="inline-flex items-center justify-center rounded p-1 text-(--iux-muted-foreground) hover:bg-(--iux-muted) hover:text-(--iux-foreground)"
+            title="Open window"
+            aria-label="Open window"
+            disabled={busy}
+            onClick={() => void run(() => api.webOpenWindow({ url: "https://example.com" }))}
+          >
+            <PlusIcon size={13} weight="bold" />
+          </button>
+        </div>
+        <div className="ml-auto flex items-center gap-1 shrink-0">
+          {onToggleExpand ? (
+            <IconButton
+              label={expanded ? "Restore panel" : "Expand panel"}
+              onClick={onToggleExpand}
+            >
+              {expanded ? <CornersInIcon size={14} weight="bold" /> : <CornersOutIcon size={14} weight="bold" />}
+            </IconButton>
+          ) : null}
+          <IconButton label="Close preview" onClick={onClose}>
+            <XIcon size={14} weight="bold" />
+          </IconButton>
+        </div>
+      </header>
+      <div className="flex flex-col gap-2.5 border-b border-(--iux-border) p-3 text-sm">
+        <div className="flex items-center gap-1.5">
+          <IconButton label="Back" disabled={busy || !target} onClick={() => void run(() => api.webBack(id))}>
+            <ArrowLeftIcon size={14} weight="bold" />
+          </IconButton>
+          <IconButton label="Forward" disabled={busy || !target} onClick={() => void run(() => api.webForward(id))}>
+            <ArrowRightIcon size={14} weight="bold" />
+          </IconButton>
+          <IconButton label="Reload preview" disabled={busy || !target} onClick={() => { reloadPreview(); void run(() => api.webReload(id)); }}>
+            <ArrowsClockwiseIcon size={14} weight="bold" />
+          </IconButton>
+          <form
+            className="flex min-w-0 flex-1 items-center gap-1.5"
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (target && addressInput.trim()) {
+                void run(() => api.webNavigate(target.id, addressInput.trim()));
+              }
+            }}
+          >
+            <input
+              type="text"
+              dir="ltr"
+              className="iux-input min-w-0 flex-1 text-xs"
+              value={addressInput}
+              spellCheck={false}
+              aria-label="Address"
+              onChange={(event) => setAddressInput(event.target.value)}
+            />
+            <button type="submit" className="iux-btn px-2.5 py-1 text-xs" disabled={busy || !target}>
+              Go
+            </button>
+          </form>
+        </div>
+        <div className="flex flex-wrap items-center gap-2 text-xs">
+          <select
+            className="iux-input py-1 text-xs"
+            aria-label="Device size"
+            value={preset}
+            onChange={(event) => applyPreset(event.target.value as Viewport)}
+          >
+            {VIEWPORTS.map((item) => (
+              <option key={item} value={item}>
+                {item}
+              </option>
+            ))}
+            <option value="custom">custom</option>
+          </select>
+          {preset === "custom" ? (
+            <>
+              <input
+                type="number"
+                dir="ltr"
+                className="iux-input w-16 py-1 text-xs"
+                aria-label="Viewport width"
+                placeholder="Width"
+                min={200}
+                max={4000}
+                value={customWidth}
+                onChange={(event) => setCustomWidth(event.target.value)}
+              />
+              <input
+                type="number"
+                dir="ltr"
+                className="iux-input w-16 py-1 text-xs"
+                aria-label="Viewport height"
+                placeholder="Height"
+                min={200}
+                max={4000}
+                value={customHeight}
+                onChange={(event) => setCustomHeight(event.target.value)}
+              />
+              <button
+                type="button"
+                className="iux-btn px-2 py-1 text-xs"
+                disabled={busy || !Number(customWidth) || !Number(customHeight)}
+                onClick={applyCustom}
+              >
+                Apply
+              </button>
+            </>
+          ) : null}
+          <label className="ms-auto flex items-center gap-1 text-xs text-(--iux-muted-foreground)">
+            <input type="checkbox" checked={fit} onChange={(event) => setFit(event.target.checked)} />
+            Fit to window
+          </label>
+        </div>
       </div>
-      <div className="flex items-center gap-2">
-        <IconButton label="Back" onClick={() => void run(() => api.webBack(id))}><ArrowLeftIcon size={14} weight="bold" /></IconButton>
-        <IconButton label="Reload preview" onClick={() => { reloadPreview(); void run(() => api.webReload(id)); }}><ArrowsClockwiseIcon size={14} weight="bold" /></IconButton>
-        <IconButton label="Forward" onClick={() => void run(() => api.webForward(id))}><ArrowRightIcon size={14} weight="bold" /></IconButton>
-        <label className="ms-auto flex items-center gap-1 text-xs">
-          <input type="checkbox" checked={fit} onChange={(event) => setFit(event.target.checked)} />
-          Fit to window
-        </label>
+      <div className="iux-scroll min-h-0 flex-1 overflow-auto p-4">
+        {target && shotUrl ? (
+          <img
+            src={shotUrl}
+            alt={`Live snapshot of window ${id}`}
+            className={fit ? "mx-auto max-w-full" : ""}
+            style={fit ? undefined : { width: Math.min(size?.[0] ?? SNAPSHOT_WIDTH_CAP, SNAPSHOT_WIDTH_CAP) }}
+          />
+        ) : null}
+        {target && !shotUrl && !shotError ? <p role="status" className="text-xs text-(--iux-muted-foreground)">Capturing…</p> : null}
+        {shotError ? <Status value={{ ok: false, text: shotError }} /> : null}
+        {!target ? <Empty>Open a window to preview it here.</Empty> : null}
       </div>
-      <div className="flex items-center gap-2">
-        <select className="iux-input min-w-0 flex-1" aria-label="Device size" value={preset}
-          onChange={(event) => applyPreset(event.target.value as Viewport)}>
-          {VIEWPORTS.map((item) => <option key={item} value={item}>{item}</option>)}
-          <option value="custom">custom</option>
-        </select>
-        {preset === "custom" ? <>
-          <input type="number" dir="ltr" className="iux-input w-20" aria-label="Viewport width" placeholder="Width"
-            min={200} max={4000} value={customWidth} onChange={(event) => setCustomWidth(event.target.value)} />
-          <input type="number" dir="ltr" className="iux-input w-20" aria-label="Viewport height" placeholder="Height"
-            min={200} max={4000} value={customHeight} onChange={(event) => setCustomHeight(event.target.value)} />
-          <button type="button" className="iux-btn" disabled={busy || !Number(customWidth) || !Number(customHeight)}
-            onClick={applyCustom}>Apply</button>
-        </> : null}
-      </div>
-      {size ? <p className="text-xs text-(--iux-muted-foreground)" dir="ltr" translate="no">{`${size[0]} × ${size[1]}`}</p> : null}
-    </div>
-    <div className="iux-scroll min-h-0 flex-1 overflow-auto p-4">
-      {target && shotUrl ? <img src={shotUrl} alt={`Live snapshot of window ${id}`} className={fit ? "mx-auto max-w-full" : ""}
-        style={fit ? undefined : { width: Math.min(size?.[0] ?? SNAPSHOT_WIDTH_CAP, SNAPSHOT_WIDTH_CAP) }} /> : null}
-      {target && !shotUrl && !shotError ? <p role="status" className="text-xs text-(--iux-muted-foreground)">Capturing…</p> : null}
-      {shotError ? <Status value={{ ok: false, text: shotError }} /> : null}
-      {!target ? <Empty>Open a window to preview it here.</Empty> : null}
-    </div>
-  </aside>;
+      <footer className="flex items-center justify-between border-t border-(--iux-border) px-3 py-1.5 text-[11px] text-(--iux-muted-foreground)">
+        <span className="max-w-[70%] truncate" dir="ltr">
+          {target ? target.url : "No active window"}
+        </span>
+        {size ? (
+          <span dir="ltr" className="tabular-nums">
+            {size[0]} × {size[1]}
+          </span>
+        ) : null}
+      </footer>
+    </aside>
+  );
 }
 
 /** One line per event; payloads are JSON, kept short by the engine's capture cap. */
