@@ -105,6 +105,18 @@ say "staging the runtime and dashboard"
 node scripts/stage-runtime.mjs
 [ -n "${APPLE_SIGNING_IDENTITY:-}" ] || die "bundled Python helpers need a Developer ID identity in the keychain; import APPLE_CERTIFICATE before building"
 node scripts/stage-python-helper.mjs
+# The Web Lab engine ships as a nested resource binary (staged under
+# resources/os-lab/web-lab). `npx tauri build` below signs the app and
+# notarizes it in this environment, and notarization refuses unsigned nested
+# Mach-O binaries, so sign the staged engine before the build. Skipped
+# silently when the engine is not staged.
+ENGINE_BIN="$APP_DIR/src-tauri/resources/os-lab/web-lab/browser/target/release/weblab"
+if [ -f "$ENGINE_BIN" ]; then
+  say "signing the staged web-lab engine"
+  codesign --force --options runtime --timestamp \
+    --sign "$APPLE_SIGNING_IDENTITY" "$ENGINE_BIN" \
+    || die "signing the web-lab engine failed"
+fi
 if [ -z "${TAURI_SIGNING_PRIVATE_KEY:-}" ] && [ -f "$REPO/secrets/updater/os-lab.key" ]; then
   export TAURI_SIGNING_PRIVATE_KEY="$(cat "$REPO/secrets/updater/os-lab.key")"
 fi
@@ -156,16 +168,6 @@ if [ -d "$APP_DIR/widget/build/OSLabWidgets.appex" ]; then
   rm -rf "$APP/Contents/PlugIns/OSLabWidgets.appex" "$APP/Contents/Frameworks/OSLabWidgetReloader.framework"
   cp -R "$APP_DIR/widget/build/OSLabWidgets.appex" "$APP/Contents/PlugIns/"
   cp -R "$APP_DIR/widget/build/OSLabWidgetReloader.framework" "$APP/Contents/Frameworks/"
-  # The Web Lab engine ships as a nested resource binary (staged under
-  # Resources/os-lab/web-lab). Notarization refuses unsigned nested Mach-O, so
-  # sign it here — inside-out, before the host app is re-signed.
-  ENGINE_BIN="$APP/Contents/Resources/os-lab/web-lab/browser/target/release/weblab"
-  if [ -f "$ENGINE_BIN" ]; then
-    say "signing the nested web-lab engine"
-    codesign --force --options runtime --timestamp \
-      --sign "$APPLE_SIGNING_IDENTITY" "$ENGINE_BIN" \
-      || die "signing the web-lab engine failed"
-  fi
   codesign --force --options runtime --timestamp --entitlements "$WIDGET_ENTITLEMENTS" \
     --sign "$APPLE_SIGNING_IDENTITY" "$APP/Contents/PlugIns/OSLabWidgets.appex" \
     || die "signing the widget extension failed"
