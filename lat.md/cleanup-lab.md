@@ -290,8 +290,9 @@ quick-clean flag, a Trash-only `autoCleanHook` and a `sizeAlert` threshold.
 
 Loads that know the catalog drop rows naming entries it no longer lists and
 name them in `error` — one stale row used to 409 every add, update and
-remove with `Unknown catalog entry` for an entry the request never named;
-the next successful save persists the healed store.
+remove with `Unknown catalog entry` for an entry the request never named.
+The healing load persists the healed store itself, so the drop notice is
+one-time; a bare load stays a fail-open read that writes nothing.
 
 `plan_entry_ids()` filters by flag in priority order and refuses the
 catalog's never-preselect risk classes with per-entry reasons. Quick clean

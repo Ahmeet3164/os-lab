@@ -73,6 +73,9 @@ test("a not-capable machine states the honest reason", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Desktop widgets" }).first()).toBeVisible();
   await expect(page.getByText("Publishing is idle until the installed os-lab app creates its widget container.")).toBeVisible();
   await expect(page.getByText("not published")).toBeVisible();
+  // The absent-container case explains itself once; the engine's publish
+  // refusal is redundant here and must not contradict the idle note.
+  await expect(page.getByText("The widget container is not available here.")).toHaveCount(0);
 });
 
 test("an empty payload degrades instead of crashing the island", async ({ page }) => {

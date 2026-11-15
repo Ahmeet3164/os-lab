@@ -914,8 +914,8 @@ def test_a_stale_bookmark_row_no_longer_bricks_adds(monkeypatch, tmp_path):
     """One store row naming an entry the catalog no longer lists used to make
     every add 409 with "Unknown catalog entry: <that row>" — the live 0.3.7
     console hit exactly this with a leftover test row. Loads that know the
-    catalog now drop and name such rows, and the next add persists the healed
-    store."""
+    catalog now drop and name such rows and persist the heal right away, so
+    the notice is one-time instead of repeating on every page load."""
     _bookmark_env(monkeypatch, tmp_path)
     import json as _json
     state = tmp_path / "state"
@@ -932,6 +932,13 @@ def test_a_stale_bookmark_row_no_longer_bricks_adds(monkeypatch, tmp_path):
     listed = api.get("/api/cleanup/bookmarks", {})
     assert [item["entryId"] for item in listed["bookmarks"]] == ["system.user-caches"]
     assert "no longer lists" in (listed["error"] or "")
+    # The heal persisted: the file no longer carries the stale row and the
+    # follow-up GET is clean.
+    healed_store = _json.loads((state / "bookmarks.json").read_text())
+    assert [item["entryId"] for item in healed_store["bookmarks"]] == ["system.user-caches"]
+    again = api.get("/api/cleanup/bookmarks", {})
+    assert again["error"] is None
+    assert [item["entryId"] for item in again["bookmarks"]] == ["system.user-caches"]
     # The add no longer 409s, and its save persists the healed store.
     report = api.post("/api/cleanup/bookmarks", {"entryId": "developers.npm"})
     assert report["error"] is None

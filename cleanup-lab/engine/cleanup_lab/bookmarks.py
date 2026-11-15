@@ -141,8 +141,9 @@ def load(env=None, platform=None, catalog_ids=None):
     dropped and named in ``error`` instead of poisoning every later save —
     one stale row (a renamed catalog id, a test artifact) used to 409 every
     add, update and remove with ``Unknown catalog entry`` for an entry the
-    request never mentioned. The next successful save persists the healed
-    list; without ``catalog_ids`` every stored row is kept as-is.
+    request never mentioned. The healed list is persisted right here, so the
+    drop is reported once and every later read is clean; without
+    ``catalog_ids`` every stored row is kept as-is and nothing is written.
     """
     path = _store_path(env, platform)
     try:
@@ -173,6 +174,10 @@ def load(env=None, platform=None, catalog_ids=None):
     if dropped:
         error = "Dropped {0} bookmark(s) the catalog no longer lists: {1}".format(
             len(dropped), ", ".join(dropped))
+        try:
+            save(bookmarks, env=env, platform=platform, catalog_ids=catalog_ids)
+        except (BookmarksError, OSError):
+            pass  # an unwritable store degrades to the in-memory heal only
     return {"bookmarks": sorted(bookmarks, key=lambda item: (item["priority"], item["createdAt"])), "error": error}
 
 
