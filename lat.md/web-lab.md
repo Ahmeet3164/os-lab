@@ -36,9 +36,19 @@ registers the lab (`native-rust` provider and action plans).
 
 The dashboard's generic lab page covers readiness and actions; the workbench
 at `/web-lab/` ([[dashboard/src/views/web-lab/pages.tsx]]) opens windows,
-manages injections, runs eval and tails the event log. It is a console-only
-route: it appears in neither the Pages deploy keep-list nor the public
-navigation.
+manages injections, runs eval and tails the event log. A docked right panel
+shows a live preview of one window: polled JPEG snapshots from
+`GET /api/web/windows/{id}/screenshot`, back/reload/forward, and a device
+size toggle that resizes the real window through
+`POST /api/web/windows/{id}/viewport` (presets plus a custom width/height
+pair, clamped to 200–4000). The preview is view-only — clicks happen in the
+real window — and capture is macOS-only: [[web-lab/browser/src/capture.rs]]
+asks the embedded WKWebView for a snapshot through tao's `ns_view`, so the
+window server never sees another process's pixels and no Screen Recording
+permission is needed; other hosts answer with a clear refusal. Both routes
+return JSON (base64 payload), so the console proxy passes them through
+unchanged. It is a console-only route: it appears in neither the Pages
+deploy keep-list nor the public navigation.
 
 ## Safety stance
 

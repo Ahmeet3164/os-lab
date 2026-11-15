@@ -2621,5 +2621,21 @@
   "Viewport": "Viewport",
   "Web Lab": "Web Lab",
   "Web Lab engine readiness: cargo, make and the built engine": "Preparazione del motore del Web Lab: cargo, make e il motore compilato",
-  "Workbench": "Banco di lavoro"
+  "Workbench": "Banco di lavoro",
+  "Preview panel": "Pannello di anteprima",
+  "Live preview": "Anteprima live",
+  "Close preview": "Chiudi anteprima",
+  "Preview window": "Finestra di anteprima",
+  "Reload preview": "Ricarica anteprima",
+  "Forward": "Avanti",
+  "Device size": "Dimensione dispositivo",
+  "Viewport width": "Larghezza viewport",
+  "Viewport height": "Altezza viewport",
+  "Apply": "Applica",
+  "custom": "personalizzato",
+  "Fit to window": "Adatta alla finestra",
+  "Capturing…": "Acquisizione…",
+  "Open a window to preview it here.": "Apri una finestra per vederla qui.",
+  "Width": "Larghezza",
+  "Height": "Altezza"
 }

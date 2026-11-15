@@ -449,7 +449,16 @@ export interface WebEngineHealth {
   ok: boolean; engine: string; version: string; port: number; windows: number; eventCount: number;
 }
 export interface WebWindowState {
-  id: number; url: string; profile: string; user_agent: string | null; viewport: string; created_at: number;
+  id: number; url: string; profile: string; user_agent: string | null; viewport: string;
+  /** Current logical size in CSS pixels; the preview panel reads it. */
+  size?: [number, number];
+  created_at: number;
+}
+export interface WebScreenshot {
+  ok: boolean; format: string; dataBase64: string;
+}
+export interface WebViewportResult {
+  ok: boolean; applied: boolean; viewport: string; size: [number, number];
 }
 export interface WebInjection {
   id: string; name: string; code: string; enabled: boolean;
@@ -639,6 +648,13 @@ export const api = {
   webCloseWindow: (id: number) => call<{ ok: boolean; closed: boolean }>(`/api/web/windows/${id}`, { method: "DELETE", headers: { "X-OSLab": "1" } }),
   webNavigate: (id: number, url: string) => post<{ ok: boolean }>(`/api/web/windows/${id}/navigate`, { url }),
   webReload: (id: number) => post<{ ok: boolean }>(`/api/web/windows/${id}/reload`),
+  /** Live preview: a polled JPEG snapshot of the window (macOS capture, view-only). */
+  webScreenshot: (id: number) => call<WebScreenshot>(`/api/web/windows/${id}/screenshot`),
+  /** The device toggle: a preset name or an explicit width/height pair. */
+  webViewport: (id: number, request: { viewport?: string; width?: number; height?: number }) =>
+    post<WebViewportResult>(`/api/web/windows/${id}/viewport`, request),
+  webBack: (id: number) => post<{ ok: boolean }>(`/api/web/windows/${id}/back`),
+  webForward: (id: number) => post<{ ok: boolean }>(`/api/web/windows/${id}/forward`),
   webEval: (id: number, code: string) => post<{ ok: boolean; applied: boolean }>(`/api/web/windows/${id}/eval`, { code }),
   webCookies: (id: number) => post<{ ok: boolean }>(`/api/web/windows/${id}/cookies`),
   webStorage: (id: number) => post<{ ok: boolean }>(`/api/web/windows/${id}/storage`),

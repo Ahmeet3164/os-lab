@@ -2621,5 +2621,21 @@
   "Viewport": "منطقة العرض",
   "Web Lab": "Web Lab",
   "Web Lab engine readiness: cargo, make and the built engine": "جهوزية محرك Web Lab: cargo و make والمحرك المبني",
-  "Workbench": "منصة العمل"
+  "Workbench": "منصة العمل",
+  "Preview panel": "لوحة المعاينة",
+  "Live preview": "معاينة مباشرة",
+  "Close preview": "إغلاق المعاينة",
+  "Preview window": "نافذة المعاينة",
+  "Reload preview": "إعادة تحميل المعاينة",
+  "Forward": "للأمام",
+  "Device size": "حجم الجهاز",
+  "Viewport width": "عرض منفذ العرض",
+  "Viewport height": "ارتفاع منفذ العرض",
+  "Apply": "تطبيق",
+  "custom": "مخصص",
+  "Fit to window": "ملاءمة النافذة",
+  "Capturing…": "جارٍ الالتقاط…",
+  "Open a window to preview it here.": "افتح نافذة لمعاينتها هنا.",
+  "Width": "العرض",
+  "Height": "الارتفاع"
 }
