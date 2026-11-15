@@ -66,3 +66,6 @@ app/**/*.pfx
 
 # Built content pack (scripts/build-content.py)
 dist-content/
+
+# Web Lab engine build artifacts (web-lab/browser)
+web-lab/browser/target/

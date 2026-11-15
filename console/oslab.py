@@ -40,11 +40,13 @@ import uuid
 
 # ── Static lab model ─────────────────────────────────────────────────────────
 
-LAB_ORDER = ["android", "windows", "linux", "ios", "macos", "source"]
+LAB_ORDER = ["android", "windows", "linux", "ios", "macos", "source", "web"]
 
 LABS = {
     "source": {"label": "Source Lab", "dir": "source-lab", "labctl": "source", "containers": [],
                "summary": "Local source and package analysis across five platforms."},
+    "web": {"label": "Web Lab", "dir": "web-lab", "labctl": "web", "containers": [],
+            "summary": "Embedded in-app browser with JavaScript injection for webview security work."},
     "android": {
         "label": "Android Lab",
         "dir": "android-lab/lab",
@@ -92,6 +94,7 @@ TOOLS = [
     ("make", "Make"),
     ("git", "Git"),
     ("python3", "Python 3"),
+    ("cargo", "Rust (Cargo)"),
     ("adb", "Android Debug Bridge"),
     ("java", "Java"),
     ("xcrun", "Xcode tools"),
@@ -1566,6 +1569,8 @@ def _req(id_: str, label: str, found: bool, required: bool = True, hint: str = "
 def provider_for(lab: str, os_name: str) -> str | None:
     if lab == "source":
         return "native-python" if os_name in ("linux", "macos", "windows") else None
+    if lab == "web":
+        return "native-rust" if os_name in ("linux", "macos", "windows") else None
     if lab == "macos":
         return "native-macos" if os_name == "macos" else None
     if os_name == "macos":
@@ -1586,6 +1591,8 @@ def lab_status(lab: str, host: dict) -> dict:
     if lab == "source":
         import source_control
         return source_control.lab_status(host["root"], host["os"])
+    if lab == "web":
+        return web_lab_status(host)
     meta = LABS[lab]
     os_name, arch = host["os"], host["arch"]
     tools = {t["id"]: t["found"] for t in host["tools"]}
@@ -1689,9 +1696,51 @@ def lab_status(lab: str, host: dict) -> dict:
             "installed": os.path.isdir(os.path.join(host["root"], meta["dir"]))}
 
 
+def web_lab_status(host: dict) -> dict:
+    """Web Lab readiness from console/web_api.py: cargo and make decide the state.
+
+    ``ready`` covers both a running engine and a built-but-stopped one: the
+    console can start the engine itself, so only the binary really gates use.
+    """
+    meta = LABS["web"]
+    tools = {t["id"]: t["found"] for t in host["tools"]}
+    try:
+        import web_api
+        engine = web_api.WebLabAPI(host["root"]).status()
+    except ImportError:
+        engine = None
+    binary = bool(engine and engine.get("binary"))
+    reqs = [
+        _req("cargo", "Rust (Cargo)", tools.get("cargo"), hint="Install Rust via rustup (https://rustup.rs)"),
+        _req("make", "Make", tools.get("make")),
+        _req("bash", "Bash", tools.get("bash")),
+    ]
+    state = "ready"
+    reasons: list[str] = []
+    if not binary:
+        state = "needs-setup" if tools.get("cargo") else "unavailable"
+        reasons.append("The Web Lab engine is not built. Install dependencies (cargo build --release)."
+                       if tools.get("cargo") else "Cargo is missing, so the engine cannot be built.")
+    notes: list[str] = []
+    if engine and engine.get("state") == "ready":
+        notes.append("The engine is running on port %d." % engine.get("port"))
+    else:
+        notes.append("The engine runs locally on 127.0.0.1 and starts from the console when needed.")
+    provider = provider_for("web", host["os"])
+    if provider is None:
+        state = "unavailable"
+        reasons.append("Web Lab needs a Linux, macOS or Windows host.")
+    return {"id": "web", "label": meta["label"], "summary": meta["summary"], "state": state,
+            "provider": provider, "reasons": reasons, "requirements": reqs, "notes": notes,
+            "actions": actions_for("web", provider) if state != "unavailable" else [],
+            "installed": os.path.isdir(os.path.join(host["root"], meta["dir"]))}
+
+
 def actions_for(lab: str, provider: str | None) -> list[dict]:
     if provider == "native-macos":
         names = MACOS_APP_ACTIONS if lab == "macos" else MAC_ACTIONS
+    elif provider == "native-rust":
+        names = ["status", "doctor", "setup", "start", "stop"]
     elif provider:
         names = [a for a in LABCTL_ACTIONS if not (a == "backup" and lab == "android")]
         if provider == "macos-containers":
@@ -2127,12 +2176,15 @@ def plan(root: str, request: dict, host: dict | None = None) -> dict:
             if profile:
                 raise PlanError("Apply a profile first, then run this action")
             program, args = "bash", [script]
-            effects.append({
-                "setup": "Installs packages, changes user groups and may alter firewall rules according to configuration.",
-                "service-install": "Changes system service boot configuration and may start the lab.",
-                "service-uninstall": "Removes the systemd unit; a running lab keeps running until stopped.",
-                "backup": "Writes a guest backup into the lab's backups/ folder. Ensure enough free space.",
-            }[action])
+            if lab == "web":
+                effects.append("Installs the Rust toolchain via rustup if cargo is missing, then builds the Web Lab engine (cargo build --release).")
+            else:
+                effects.append({
+                    "setup": "Installs packages, changes user groups and may alter firewall rules according to configuration.",
+                    "service-install": "Changes system service boot configuration and may start the lab.",
+                    "service-uninstall": "Removes the systemd unit; a running lab keeps running until stopped.",
+                    "backup": "Writes a guest backup into the lab's backups/ folder. Ensure enough free space.",
+                }[action])
             timeout = 3600
         else:
             args = [labctl, meta["labctl"]]

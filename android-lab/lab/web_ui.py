@@ -53,6 +53,10 @@ try:
     import cleanup_api  # noqa: E402  (console/cleanup_api.py: Cleanup Lab readiness and, later, scan/clean)
 except ImportError:
     cleanup_api = None
+try:
+    import web_api  # noqa: E402  (console/web_api.py: Web Lab engine readiness and proxy)
+except ImportError:
+    web_api = None
 ARTIFACTS_DIR = os.path.join(SCRIPT_DIR, "artifacts")
 SCRIPTS_DIR = os.path.join(SCRIPT_DIR, "scripts")
 
@@ -150,7 +154,7 @@ def cached_host():
 class LabHttpHandler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):
         # Polling is frequent; keep the terminal for errors
-        if not self.path.startswith(("/api/logs", "/api/jobs", "/api/health", "/api/host", "/api/labs/", "/api/capabilities", "/api/cleanup")):
+        if not self.path.startswith(("/api/logs", "/api/jobs", "/api/health", "/api/host", "/api/labs/", "/api/capabilities", "/api/cleanup", "/api/web")):
             super().log_message(fmt, *args)
 
     def _host_ok(self) -> bool:
@@ -187,6 +191,9 @@ class LabHttpHandler(BaseHTTPRequestHandler):
             return
         if path.startswith("/api/cleanup"):
             self._cleanup_get(path, urllib.parse.parse_qs(parsed.query, keep_blank_values=True))
+            return
+        if path.startswith("/api/web"):
+            self._web_get(path, urllib.parse.parse_qs(parsed.query, keep_blank_values=True))
             return
         if path.startswith("/api/app/update"):
             self._app_get(path)
@@ -257,6 +264,37 @@ class LabHttpHandler(BaseHTTPRequestHandler):
         except ValueError as e:
             self._json(400, {"error": str(e)})
 
+    def _weblab(self):
+        if web_api is None:
+            self._json(501, {"error": "Web Lab console support is not installed"})
+            return None
+        if not hasattr(self, "_weblab_api"):
+            self._weblab_api = web_api.WebLabAPI(REPO_ROOT)
+        return self._weblab_api
+
+    def _web_get(self, path: str, query: dict):
+        """Web Lab: readiness, windows, injections, profiles and captured events."""
+        api = self._weblab()
+        if api is None:
+            return
+        try:
+            self._json(200, api.get(path, query))
+        except web_api.WebLabError as exc:
+            self._json(exc.status, {"error": str(exc)})
+
+    def _web_post(self, path: str):
+        """Web Lab: typed actions only (engine start/stop, windows, injections)."""
+        api = self._weblab()
+        if api is None:
+            return
+        try:
+            data = self._read_json()
+            self._json(200, api.post(path, data))
+        except web_api.WebLabError as exc:
+            self._json(exc.status, {"error": str(exc)})
+        except ValueError as e:
+            self._json(400, {"error": str(e)})
+
     def _source_get(self, path: str, query: dict):
         if source_artifacts is None or not oslab:
             self._json(501, {"error": "Source Lab console support is not installed"})
@@ -297,7 +335,17 @@ class LabHttpHandler(BaseHTTPRequestHandler):
         if self.headers.get("X-OSLab") != "1":
             self._json(403, {"error": "Missing X-OSLab header"})
             return
-        parts = [p for p in urllib.parse.urlparse(self.path).path.split("/") if p]
+        path = urllib.parse.urlparse(self.path).path
+        if path.startswith("/api/web"):
+            api = self._weblab()
+            if api is None:
+                return
+            try:
+                self._json(200, api.delete(path))
+            except web_api.WebLabError as exc:
+                self._json(exc.status, {"error": str(exc)})
+            return
+        parts = [p for p in path.split("/") if p]
         if len(parts) == 5 and parts[:2] == ["api", "labs"] and parts[2] == "macos" and parts[3] == "session":
             if not oslab:
                 self._json(501, {"error": "The console module (console/oslab.py) is not installed"})
@@ -307,7 +355,7 @@ class LabHttpHandler(BaseHTTPRequestHandler):
             except oslab.PlanError as e:
                 self._json(400, {"error": str(e)})
             return
-        self._source_mutate(urllib.parse.urlparse(self.path).path, "DELETE")
+        self._source_mutate(path, "DELETE")
 
     def _send_bytes(self, status: int, body: bytes, content_type: str, cache: str = "no-cache"):
         self.send_response(status)
@@ -416,6 +464,9 @@ class LabHttpHandler(BaseHTTPRequestHandler):
             return
         if path.startswith("/api/cleanup"):
             self._cleanup_post(path)
+            return
+        if path.startswith("/api/web"):
+            self._web_post(path)
             return
         if path.startswith(("/api/labs", "/api/jobs")):
             if not oslab:

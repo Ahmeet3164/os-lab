@@ -213,6 +213,7 @@ test("every local page type hydrates without a browser error", async ({ page }) 
     "/", "/jobs/", "/contribute/", "/feedback/", "/content/", "/health/", "/legal/",
     "/legal/terms/", "/legal/acceptable-use/", "/legal/privacy/", "/legal/third-party/",
     "/labs/android/", "/labs/ios/", "/labs/windows/", "/labs/linux/", "/labs/macos/",
+    "/labs/web/", "/web-lab/",
     "/android/", "/android/providers/", "/android/workflows/", "/android/console/",
     "/android/analytics/", "/android/sitemap/", "/firewall/"
   ]) {
