@@ -157,3 +157,6 @@ mac-ax-helper: ## macOS host: compile the native AX helper for rich element read
 
 mac-mcp: ## macOS host: run the guarded MCP server for computer-use agents (MIR-12)
 	python3 ../console/mcp_server.py
+
+mac-cleanup-verify: ## macOS host: audit the running app's Cleanup panel + scans (BOOKMARK=1 RECORD=1 PORT=)
+	bash mac/cleanup-panel-verify.sh
