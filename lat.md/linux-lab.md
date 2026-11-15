@@ -92,11 +92,16 @@ Script: `linux-lab/scripts/os-24-deb-installer.sh`
 
 ### Usage
 
+Install a local Debian package: the script validates it first, then hands
+it to apt.
+
 ```bash
 ./linux-lab/scripts/os-24-deb-installer.sh ./package.deb
 ```
 
 ### Behavior
+
+Validation and install steps, in order:
 
 - Requires exactly one package path.
 - Checks whether the file exists.

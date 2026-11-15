@@ -724,6 +724,92 @@ def test_the_permissions_endpoint_classifies_the_latest_scan_unreadable(tmp_path
     ]
 
 
+def test_the_grant_endpoint_opens_the_engine_panes_and_never_a_page_url(monkeypatch):
+    """The open-settings round-trip: the page names a permission, the console
+    opens the engine's fixed panes (modern first, legacy fallback) — never a
+    string the page supplied. The in-app deep link used to be a plain anchor,
+    which the webview silently swallows, so the grant action never worked."""
+    import types
+    import cleanup_lab.permissions as permissions_module
+
+    modern = "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_AllFiles"
+    legacy = "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles"
+    opened = []
+
+    def fake_run(args, capture_output, timeout):
+        opened.append(args)
+        return types.SimpleNamespace(returncode=0, stdout=b"", stderr=b"")
+
+    monkeypatch.setattr(permissions_module, "settings_urls",
+                        lambda permission_id, platform=None: (modern, legacy))
+    monkeypatch.setattr(cleanup_api.subprocess, "run", fake_run)
+    api = cleanup_api.CleanupAPI(REPO_ROOT)
+    result = api.post("/api/cleanup/permissions/open-settings", {"permissionId": "macos-full-disk-access"})
+    assert result == {"permissionId": "macos-full-disk-access", "opened": modern}
+    assert opened == [["open", modern]]
+
+    # the modern pane failing falls through to the legacy pane
+    opened.clear()
+    flip = {"first": True}
+
+    def legacy_fallback(args, capture_output, timeout):
+        opened.append(args)
+        if flip["first"]:
+            flip["first"] = False
+            return types.SimpleNamespace(returncode=1, stdout=b"", stderr=b"boom")
+        return types.SimpleNamespace(returncode=0, stdout=b"", stderr=b"")
+
+    monkeypatch.setattr(cleanup_api.subprocess, "run", legacy_fallback)
+    result = api.post("/api/cleanup/permissions/open-settings", {"permissionId": "hidden-roots"})
+    assert result["opened"] == legacy
+    assert [args[1] for args in opened] == [modern, legacy]
+
+    # everything the engine does not own is refused, URL-shaped ids included
+    opened.clear()
+    monkeypatch.setattr(permissions_module, "settings_urls",
+                        lambda permission_id, platform=None: ())
+    with pytest.raises(cleanup_api.CleanupError) as caught:
+        api.post("/api/cleanup/permissions/open-settings",
+                 {"permissionId": "x-apple.systempreferences:https://example.com"})
+    assert caught.value.status == 409
+    with pytest.raises(cleanup_api.CleanupError) as caught:
+        api.post("/api/cleanup/permissions/open-settings", {"permissionId": "not-a-record"})
+    assert caught.value.status == 409
+    with pytest.raises(cleanup_api.CleanupError) as caught:
+        api.post("/api/cleanup/permissions/open-settings", {})
+    assert caught.value.status == 400
+    with pytest.raises(cleanup_api.CleanupError) as caught:
+        api.post("/api/cleanup/permissions/open-settings", {"permissionId": "x", "url": "https://example.com"})
+    assert caught.value.status == 400
+    assert opened == []
+
+
+def test_the_real_registry_answers_open_settings_refusals_off_macos(monkeypatch):
+    """With the real engine registry, an unknown id is refused everywhere and
+    the known ids answer with the fixed modern-first pane order on macOS."""
+    import types
+    import cleanup_lab.permissions as permissions_module
+
+    api = cleanup_api.CleanupAPI(REPO_ROOT)
+    with pytest.raises(cleanup_api.CleanupError) as caught:
+        api.post("/api/cleanup/permissions/open-settings", {"permissionId": "made-up"})
+    assert caught.value.status == 409
+
+    real_urls = permissions_module.FDA_SETTINGS_URLS
+    monkeypatch.setattr(paths_module, "platform_id", lambda: "macos")
+    opened = []
+
+    def fake_run(args, capture_output, timeout):
+        opened.append(args)
+        return types.SimpleNamespace(returncode=0, stdout=b"", stderr=b"")
+
+    monkeypatch.setattr(cleanup_api.subprocess, "run", fake_run)
+    result = api.post("/api/cleanup/permissions/open-settings", {"permissionId": "macos-full-disk-access"})
+    assert result["opened"] == real_urls[0]
+    assert result["opened"].startswith("x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension")
+    assert opened == [["open", real_urls[0]]]
+
+
 def test_the_monitor_endpoint_reports_disabled_state_without_probing(monkeypatch):
     import cleanup_lab.monitor as monitor_module
 

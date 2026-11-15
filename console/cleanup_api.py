@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import importlib
 import os
+import subprocess
 import sys
 import threading
 import time
@@ -58,6 +59,7 @@ BODY_KEYS = {"scan": SCAN_KEYS, "deep-scan": DEEP_KEYS, "plan": PLAN_KEYS, "clea
               "relocation-plan": ("action", "entryId", "destination"), "relocation-run": ("previewId",),
               "monitor-config": ("enabled", "intervalSeconds", "cooldownSeconds", "volumes"),
               "monitor-evaluate": (),
+              "permissions-open": ("permissionId",),
               "bookmarks-add": ("entryId",),
               "bookmarks-update": ("entryId", "priority", "quickClean", "autoCleanHook", "sizeAlert"),
               "bookmarks-remove": ("entryId",),
@@ -1079,6 +1081,31 @@ class CleanupAPI:
         if path == "/api/cleanup/leftovers/scan":
             _object_body(body, "leftovers")
             return JOBS.start_leftovers(self.root)
+        if path == "/api/cleanup/permissions/open-settings":
+            # The grant deep link: the page can only name a permission; the
+            # console opens the engine's fixed links (modern pane first, then
+            # the legacy pane) with ``open``. The in-app dashboard cannot open
+            # a custom scheme itself — the webview swallows the navigation —
+            # so the OS call lives here, exactly like app_update's ``open``.
+            _object_body(body, "permissions-open")
+            permission_id = body.get("permissionId")
+            if not isinstance(permission_id, str) or not permission_id:
+                raise CleanupError(400, "permissionId must name a permission record")
+            urls = _module(self.root, "permissions").settings_urls(permission_id)
+            if not urls:
+                raise CleanupError(409, "{0} has no settings pane to open on this platform".format(permission_id))
+            opened = None
+            for url in urls:
+                try:
+                    run = subprocess.run(["open", url], capture_output=True, timeout=10)
+                except (OSError, subprocess.SubprocessError):
+                    continue
+                if run.returncode == 0:
+                    opened = url
+                    break
+            if opened is None:
+                raise CleanupError(500, "Could not open System Settings; follow the guidance link instead")
+            return {"permissionId": permission_id, "opened": opened}
         if path == "/api/cleanup/monitor/config":
             _object_body(body, "monitor-config")
             monitor = _module(self.root, "monitor")

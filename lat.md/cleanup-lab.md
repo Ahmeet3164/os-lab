@@ -256,8 +256,15 @@ FDA; the user-folder grants; dot components → hidden roots); a recovered
 path makes no claim. Readiness gains the optional `permissions` capability,
 `labctl cleanup doctor` prints the probes, and
 `GET /api/cleanup/permissions` merges the probes with the latest scan's
-classification. The dashboard renders a Permissions card whose grant deep
-link is a plain client-side anchor — the engine never opens Settings.
+classification. The dashboard renders a Permissions card whose grant button
+posts `POST /api/cleanup/permissions/open-settings`: the page names a
+permission, and the console opens the engine's fixed panes with `open` —
+the modern privacy-extension pane first, the legacy pane as fallback. The
+old plain anchor is gone: the app webview swallows custom-scheme
+navigations, so clicking it never opened anything. The engine stays free of
+subprocesses; `settings_urls()` is the whole steerable surface, an unknown
+or non-macOS id opens nothing. The page also re-probes the records when the
+window regains focus, so a finished grant flips the chips without a reload.
 
 ### Background monitor (CLNP-09…13)
 
@@ -431,7 +438,8 @@ the seven translated locales.
 before the static dashboard fallthrough.
 
 `GET /api/cleanup/status`, `GET /api/cleanup/catalog` and `GET /api/cleanup/volumes` are read-only.
-The cleaner-pro layers add `GET /api/cleanup/permissions`, `GET /api/cleanup/monitor`
+The cleaner-pro layers add `GET /api/cleanup/permissions` plus the grant
+round-trip `POST /api/cleanup/permissions/open-settings`, `GET /api/cleanup/monitor`
 (with typed `monitor/config` and `monitor/evaluate` POSTs), the bookmark
 endpoints (`bookmarks`, `bookmarks/add|update|remove|quick-clean`), the
 custom-entry endpoints (`custom-entries`, `custom-entries/remove`) and the

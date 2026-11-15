@@ -539,6 +539,8 @@ export const api = {
   cleanupCancel: (id: string) => post<CleanupJob>(`/api/cleanup/jobs/${encodeURIComponent(id)}/cancel`),
   cleanupContainers: () => call<CleanupContainerCapabilities>("/api/cleanup/containers"),
   cleanupPermissions: () => call<CleanupPermissions>("/api/cleanup/permissions"),
+  /** The grant round-trip: name a permission, the console opens System Settings. */
+  cleanupPermissionsOpen: (permissionId: string) => post<{ permissionId: string; opened: string }>("/api/cleanup/permissions/open-settings", { permissionId }),
   cleanupMonitor: () => call<CleanupMonitorStatus>("/api/cleanup/monitor"),
   cleanupMonitorConfig: (config: CleanupMonitorConfig) => post<CleanupMonitorStatus>("/api/cleanup/monitor/config", config),
   cleanupMonitorEvaluate: () => post<CleanupMonitorStatus>("/api/cleanup/monitor/evaluate"),
