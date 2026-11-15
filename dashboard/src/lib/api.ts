@@ -34,7 +34,7 @@ export interface HostInfo {
   kvm: { present: boolean; usable: boolean };
   wsl: { guest: boolean; distributions: string[] };
   runtime: string | null;
-  xcode: { installed: boolean; iosRuntime: boolean; iosDevice: boolean } | null;
+  xcode: { installed: boolean; iosRuntime: boolean; iosDevice: boolean; developerDir?: string | null; xcodeApp?: string | null } | null;
   python: string;
   root: string;
   tools: HostTool[];
@@ -167,6 +167,21 @@ export interface IosSimulatorInfo {
   runtimes: string[];
   booted: IosSimulatorDevice[];
   configuredDevice: string | null;
+}
+/** One real (paired or connected) iOS device from GET /api/labs/ios/devices. Read-only: the panel lists, it does not drive. */
+export interface IosRealDevice {
+  udid: string;
+  name: string;
+  osVersion: string;
+  state: string;
+  paired?: boolean;
+  transport?: string | null;
+  lastSeen?: string | null;
+}
+export interface IosDevicesInfo {
+  available: boolean;
+  reason: string | null;
+  devices: IosRealDevice[];
 }
 export interface MacWindow {
   windowId: number;
@@ -618,6 +633,7 @@ export const api = {
   config: (lab: LabId) => call<LabConfig>(`/api/labs/${lab}/config`),
   monitor: (lab: LabId) => call<LabMonitor>(`/api/labs/${lab}/monitor`),
   iosSimulator: () => call<IosSimulatorInfo>(`/api/labs/ios/simulator`),
+  iosDevices: () => call<IosDevicesInfo>(`/api/labs/ios/devices`),
   iosScreenshotUrl: "/api/labs/ios/screenshot",
   macosApps: () => call<MacAppsInfo>("/api/labs/macos/apps"),
   macosAppScreenshotUrl: (windowId: number) => `/api/labs/macos/apps/${windowId}/screenshot`,

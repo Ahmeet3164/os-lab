@@ -2663,5 +2663,16 @@
   "Cancelled — the original or a verified copy is still in place.": "لغو شد — نسخهٔ اصلی یا یک نسخهٔ بررسی‌شده هنوز سر جای خود است.",
   "Interrupted": "نیمه‌کاره",
   "Local folder": "پوشهٔ محلی",
-  "Linked": "پیوند شده"
+  "Linked": "پیوند شده",
+  "Xcode": "Xcode",
+  "Real devices": "دستگاه‌های واقعی",
+  "Paired and connected iPhones and iPads, read-only.": "آیفون و آی‌پدهای جفت‌شده و متصل، فقط‌خواندنی.",
+  "No real devices are paired with this Mac.": "هیچ دستگاه واقعی با این مک جفت نشده است.",
+  "Controlling a real device needs Developer Mode and a signed WebDriverAgent — see the iOS lab README.": "کنترل یک دستگاه واقعی به حالت توسعه‌دهنده و یک WebDriverAgent امضاشده نیاز دارد — README آزمایشگاه iOS را ببینید.",
+  "System disk is running low. Simulator device data can move to another volume from the Cleanup Lab.": "دیسک سیستم در حال پر شدن است. داده‌های دستگاه شبیه‌ساز را می‌توان از آزمایشگاه پاک‌سازی به حجم دیگری منتقل کرد.",
+  "Open Relocation": "گشودن جابه‌جایی",
+  "GiB free": "گیگابایت آزاد",
+  "Show details": "نمایش جزئیات",
+  "Hide details": "پنهان کردن جزئیات",
+  "Paired": "جفت‌شده"
 }

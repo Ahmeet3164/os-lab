@@ -2663,5 +2663,16 @@
   "Cancelled — the original or a verified copy is still in place.": "Annullato — l'originale o una copia verificata è ancora al suo posto.",
   "Interrupted": "Interrotto",
   "Local folder": "Cartella locale",
-  "Linked": "Collegata"
+  "Linked": "Collegata",
+  "Xcode": "Xcode",
+  "Real devices": "Dispositivi reali",
+  "Paired and connected iPhones and iPads, read-only.": "iPhone e iPad associati e collegati, in sola lettura.",
+  "No real devices are paired with this Mac.": "Nessun dispositivo reale è associato a questo Mac.",
+  "Controlling a real device needs Developer Mode and a signed WebDriverAgent — see the iOS lab README.": "Controllare un dispositivo reale richiede la modalità sviluppatore e un WebDriverAgent firmato — vedi il README del laboratorio iOS.",
+  "System disk is running low. Simulator device data can move to another volume from the Cleanup Lab.": "Il disco di sistema si sta riempiendo. I dati dei simulatori possono essere spostati su un altro volume dal laboratorio di pulizia.",
+  "Open Relocation": "Apri Rilocazione",
+  "GiB free": "GiB liberi",
+  "Show details": "Mostra dettagli",
+  "Hide details": "Nascondi dettagli",
+  "Paired": "Associato"
 }

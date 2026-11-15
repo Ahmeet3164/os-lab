@@ -2663,5 +2663,16 @@
   "Cancelled — the original or a verified copy is still in place.": "أُلغي — الأصل أو نسخة تم التحقق منها لا تزال في مكانها.",
   "Interrupted": "متوقف",
   "Local folder": "مجلد محلي",
-  "Linked": "مرتبط"
+  "Linked": "مرتبط",
+  "Xcode": "Xcode",
+  "Real devices": "الأجهزة الحقيقية",
+  "Paired and connected iPhones and iPads, read-only.": "أجهزة iPhone و iPad المقترنة والمتصلة، للقراءة فقط.",
+  "No real devices are paired with this Mac.": "لا توجد أجهزة حقيقية مقترنة بهذا الماك.",
+  "Controlling a real device needs Developer Mode and a signed WebDriverAgent — see the iOS lab README.": "يتطلب التحكم في جهاز حقيقي وضع المطوّر وWebDriverAgent موقّعًا — راجع ملف README لمختبر iOS.",
+  "System disk is running low. Simulator device data can move to another volume from the Cleanup Lab.": "مساحة القرص على وشك النفاد. يمكن نقل بيانات أجهزة المحاكاة إلى وحدة تخزين أخرى من مختبر التنظيف.",
+  "Open Relocation": "افتح النقل",
+  "GiB free": "GiB حرة",
+  "Show details": "إظهار التفاصيل",
+  "Hide details": "إخفاء التفاصيل",
+  "Paired": "مقترن"
 }

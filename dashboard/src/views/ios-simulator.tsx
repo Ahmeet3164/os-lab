@@ -16,10 +16,18 @@ import {
   XIcon
 } from "@phosphor-icons/react";
 import { Badge, Empty, Field, IconButton, Skeleton, Status } from "../components/ui";
-import { api, message, usePoll, type LabRequest } from "../lib/api";
+import { api, message, usePoll, type CleanupVolumes, type IosDevicesInfo } from "../lib/api";
+import { localeFromPath, localePath } from "../i18n/paths";
+import type { LabRequest } from "../lib/api";
 
 /** Screens refresh a little slower than jobs; each frame is one simctl screenshot on this Mac. */
 const SCREEN_INTERVAL = 5000;
+/** Real devices change rarely; devicectl costs a subprocess, so this polls gently. */
+const DEVICES_INTERVAL = 30000;
+/** Below this much free space on the home volume, the drawer points at the relocation tab. */
+const DISK_TIGHT_BYTES = 20 * 1024 ** 3;
+
+const locale = () => (typeof window === "undefined" ? "en" : localeFromPath(window.location.pathname));
 
 export function SimulatorDrawer({ open, onClose, onPreview }: { open: boolean; onClose: () => void; onPreview: (action: string, extra?: Partial<LabRequest>) => void }) {
   if (!open) return null;
@@ -46,6 +54,12 @@ export function SimulatorDrawer({ open, onClose, onPreview }: { open: boolean; o
 
 function SimulatorBody({ onPreview }: { onPreview: (action: string, extra?: Partial<LabRequest>) => void }) {
   const { data, error } = usePoll(() => api.iosSimulator(), SCREEN_INTERVAL);
+  const { data: hostReport } = usePoll(() => api.host(), 0);
+  const { data: realDevices, error: devicesError } = usePoll<IosDevicesInfo>(() => api.iosDevices(), DEVICES_INTERVAL);
+  const { data: volumeReport } = usePoll<CleanupVolumes>(() => api.cleanupVolumes(), 0);
+  const home = volumeReport?.volumes?.find((v) => v.isHome) ?? null;
+  const diskTight = !!home && (home.pressure === "warning" || (home.freeBytes != null && home.freeBytes < DISK_TIGHT_BYTES));
+  const xcodePath = hostReport?.host.xcode?.xcodeApp || hostReport?.host.xcode?.developerDir || null;
   const [udid, setUdid] = useState("");
   const [framed, setFramed] = useState(true);
   // An older console (or the e2e mock) may answer {}; every field is optional in practice.
@@ -119,7 +133,20 @@ function SimulatorBody({ onPreview }: { onPreview: (action: string, extra?: Part
       ) : !data.available ? (
         <Empty>{data.reason ?? "The simulator tooling is not usable on this Mac."}</Empty>
       ) : (
-        <div className="flex flex-col items-center gap-5">
+        <>
+          {diskTight && home && (
+            <div className="mb-5 w-full max-w-sm rounded-md border border-(--iux-warning) p-3 text-sm">
+              <p>System disk is running low. Simulator device data can move to another volume from the Cleanup Lab.</p>
+              <p className="mt-1 text-xs text-(--iux-muted-foreground)" dir="ltr">{home.mountPoint} · {home.freeBytes == null ? "?" : Math.round(home.freeBytes / 1024 ** 3)} GiB free</p>
+              <a className="iux-btn mt-2" data-variant="outline" href={localePath("/cleanup/relocation/", locale())}>Open Relocation</a>
+            </div>
+          )}
+          {xcodePath && (
+            <p className="mb-4 w-full max-w-sm break-all text-xs text-(--iux-muted-foreground)">
+              <span className="font-medium">Xcode</span> · <span translate="no">{xcodePath}</span>
+            </p>
+          )}
+          <div className="flex flex-col items-center gap-5">
           <div className="flex w-full max-w-sm flex-wrap items-center justify-between gap-3">
             <div className="min-w-56 flex-1">
               <Field label="Device" hint={data.runtimes[0]}>
@@ -203,7 +230,47 @@ function SimulatorBody({ onPreview }: { onPreview: (action: string, extra?: Part
             ) : null}
           </div>
         </div>
+        </>
       )}
+      <section className="mt-6 w-full max-w-sm border-t border-(--iux-border) pt-4">
+        <h3 className="text-sm font-semibold">Real devices</h3>
+        <p className="text-xs text-(--iux-muted-foreground)">Paired and connected iPhones and iPads, read-only.</p>
+        {devicesError ? (
+          <Status value={{ ok: false, text: devicesError }} />
+        ) : !realDevices ? (
+          <Skeleton rows={1} />
+        ) : !realDevices.available ? (
+          <p className="mt-2 text-sm text-(--iux-muted-foreground)">{realDevices.reason}</p>
+        ) : realDevices.devices.length === 0 ? (
+          <Empty>No real devices are paired with this Mac.</Empty>
+        ) : (
+          <ul className="mt-2 divide-y divide-(--iux-border)">
+            {realDevices.devices.map((d) => (
+              <li key={d.udid} className="py-2 text-sm">
+                <div className="flex items-center gap-2">
+                  <span className="min-w-0 flex-1 truncate font-medium">{d.name}</span>
+                  {d.state ? (
+                    <Badge tone={d.state === "connected" ? "success" : undefined}>{d.state}</Badge>
+                  ) : null}
+                </div>
+                <p className="text-xs text-(--iux-muted-foreground)" dir="ltr">
+                  {d.osVersion ? `${d.osVersion} · ` : ""}
+                  <span translate="no">{d.udid}</span>
+                </p>
+                {d.paired && (
+                  <p className="text-xs text-(--iux-muted-foreground)">
+                    Paired{d.transport === "localNetwork" ? " · Wi-Fi" : d.transport ? " · USB" : ""}
+                    {d.lastSeen ? ` · last seen ${new Date(d.lastSeen).toLocaleString(locale())}` : ""}
+                  </p>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+        <p className="mt-2 text-xs text-(--iux-muted-foreground)">
+          Controlling a real device needs Developer Mode and a signed WebDriverAgent — see the iOS lab README.
+        </p>
+      </section>
     </>
   );
 }

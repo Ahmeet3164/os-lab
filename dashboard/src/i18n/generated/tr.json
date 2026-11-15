@@ -2663,5 +2663,16 @@
   "Cancelled — the original or a verified copy is still in place.": "İptal edildi — orijinal ya da doğrulanmış bir kopya hâlâ yerinde.",
   "Interrupted": "Kesildi",
   "Local folder": "Yerel klasör",
-  "Linked": "Bağlandı"
+  "Linked": "Bağlandı",
+  "Xcode": "Xcode",
+  "Real devices": "Gerçek cihazlar",
+  "Paired and connected iPhones and iPads, read-only.": "Eşleştirilmiş ve bağlı iPhone ve iPad'ler, salt okunur.",
+  "No real devices are paired with this Mac.": "Bu Mac ile eşleştirilmiş gerçek cihaz yok.",
+  "Controlling a real device needs Developer Mode and a signed WebDriverAgent — see the iOS lab README.": "Gerçek bir cihazı kontrol etmek Geliştirici Modu ve imzalı bir WebDriverAgent gerektirir — iOS laboratuvarı README'sine bakın.",
+  "System disk is running low. Simulator device data can move to another volume from the Cleanup Lab.": "Sistem diski dolmak üzere. Simülatör cihaz verileri, Temizlik Laboratuvarı'ndan başka bir birime taşınabilir.",
+  "Open Relocation": "Taşımayı aç",
+  "GiB free": "GiB boş",
+  "Show details": "Ayrıntıları göster",
+  "Hide details": "Ayrıntıları gizle",
+  "Paired": "Eşleştirildi"
 }

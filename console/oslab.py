@@ -224,9 +224,14 @@ def _managed_idb() -> str | None:
     return path if os.path.isfile(path) and os.access(path, os.X_OK) else None
 
 
+def _idb_companion() -> str | None:
+    """Homebrew's idb-companion formula installs `idb_companion` (underscore); accept both spellings."""
+    return shutil.which("idb_companion") or shutil.which("idb-companion")
+
+
 def _which(name: str) -> str | None:
     found = shutil.which(name)
-    return found or {"appium": _managed_appium, "idb": _managed_idb}.get(name, lambda: None)()
+    return found or {"appium": _managed_appium, "idb": _managed_idb, "idb-companion": _idb_companion}.get(name, lambda: None)()
 
 
 def _read(path: str) -> str:
@@ -304,12 +309,24 @@ def container_runtime() -> str | None:
 
 
 def xcode_status() -> dict:
-    """Full Xcode and an available iOS Simulator, not just the command-line tools."""
+    """Full Xcode and an available iOS Simulator, not just the command-line tools.
+
+    Detection follows ``xcode-select``/PATH, never an assumed install path, so a
+    copy of Xcode on a non-system volume is reported with its real location.
+    """
     if host_os() != "macos":
-        return {"installed": False, "iosRuntime": False, "iosDevice": False}
+        return {"installed": False, "developerDir": None, "xcodeApp": None, "iosRuntime": False, "iosDevice": False}
     installed = _capture(["xcodebuild", "-version"], timeout=5)[0] == 0
+    developer_dir = None
+    if installed:
+        code, output = _capture(["xcode-select", "-p"], timeout=5)
+        if code == 0:
+            developer_dir = output.strip() or None
+    xcode_app = None
+    if developer_dir and developer_dir.endswith("/Contents/Developer"):
+        xcode_app = developer_dir[: -len("/Contents/Developer")]
     if not installed:
-        return {"installed": False, "iosRuntime": False, "iosDevice": False}
+        return {"installed": False, "developerDir": None, "xcodeApp": None, "iosRuntime": False, "iosDevice": False}
     code, output = _capture(["xcrun", "simctl", "list", "-j", "devices", "available"], timeout=10)
     try:
         devices = json.loads(output)["devices"] if code == 0 else {}
@@ -319,7 +336,8 @@ def xcode_status() -> dict:
         ios_device = False
     code, output = _capture(["xcrun", "simctl", "list", "runtimes"], timeout=10)
     ios_runtime = code == 0 and any(line.startswith("iOS ") for line in output.splitlines())
-    return {"installed": installed, "iosRuntime": ios_runtime, "iosDevice": ios_device}
+    return {"installed": installed, "developerDir": developer_dir, "xcodeApp": xcode_app,
+            "iosRuntime": ios_runtime, "iosDevice": ios_device}
 
 
 # ── iOS Simulator panel (native macOS) ───────────────────────────────────────
@@ -385,6 +403,66 @@ def ios_screenshot() -> bytes:
             os.unlink(path)
         except OSError:
             pass
+
+
+def _os_version(value) -> str:
+    """devicectl reports an osVersion string or a {major, minor, patch} dict; both become a string."""
+    if isinstance(value, dict):
+        parts = [value.get(key) for key in ("major", "minor", "patch")]
+        return ".".join(str(part) for part in parts if part is not None)
+    return str(value or "")
+
+
+def ios_devices() -> dict:
+    """Real iOS devices (connected or paired) via `xcrun devicectl`, read-only.
+
+    This is a listing only: driving a real device needs Developer Mode on the
+    device and a signed WebDriverAgent (see ios-lab/mac/README.md), which the
+    panel deliberately does not pretend to offer.
+    """
+    if host_os() != "macos" or not _which("xcrun"):
+        return {"available": False, "reason": "Xcode and its device tooling are not usable on this Mac",
+                "devices": []}
+    fd, path = tempfile.mkstemp(suffix=".json")
+    try:
+        os.close(fd)
+        code, output = _capture(["xcrun", "devicectl", "list", "devices", "--json-output", path], timeout=15)
+        if code != 0:
+            reason = output.strip().splitlines()[-1][:200] if output.strip() else "devicectl failed"
+            return {"available": False, "reason": reason, "devices": []}
+        try:
+            with open(path, encoding="utf-8") as f:
+                data = json.load(f)
+        except (OSError, ValueError):
+            return {"available": False, "reason": "devicectl returned unreadable output", "devices": []}
+    finally:
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
+    devices = []
+    for entry in (data.get("result") or {}).get("devices") or []:
+        if not isinstance(entry, dict):
+            continue
+        # devicectl also lists simulators here; visibilityClass separates them from real hardware.
+        if (entry.get("visibilityClass") or "") == "simulators":
+            continue
+        props = entry.get("deviceProperties") or {}
+        hardware = entry.get("hardwareProperties") or {}
+        connection = entry.get("connectionProperties") or {}
+        # transportType names how the device is paired: localNetwork (Wi-Fi) vs a USB
+        # wire. A Wi-Fi-paired device stays listed even while its tunnel is down.
+        devices.append({
+            "udid": entry.get("identifier") or hardware.get("udid") or "",
+            "name": props.get("name") or "",
+            "osVersion": _os_version(props.get("osVersionNumber") or props.get("osVersion")),
+            "state": connection.get("tunnelState") or connection.get("pairingState") or "",
+            "paired": (connection.get("pairingState") or "") == "paired",
+            "transport": connection.get("transportType") or None,
+            "lastSeen": connection.get("lastConnectionDate") or None,
+        })
+    devices.sort(key=lambda d: (d["name"], d["udid"]))
+    return {"available": True, "reason": None, "devices": devices}
 
 
 # ── macOS app mirror ─────────────────────────────────────────────────────────
