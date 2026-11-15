@@ -62,7 +62,22 @@ def engine_port() -> int:
 
 def binary_path(root) -> str:
     suffix = ".exe" if platform.system() == "Windows" else ""
-    return os.path.join(root, "web-lab", "browser", "target", "release", f"weblab{suffix}")
+    binary_name = f"weblab{suffix}"
+    env_path = os.environ.get("WEBLAB_BINARY")
+    if env_path and os.path.isfile(env_path) and os.access(env_path, os.X_OK):
+        return env_path
+    candidates = [
+        os.path.join(root, "web-lab", "browser", "target", "release", binary_name),
+        os.path.join(root, "web-lab", "bin", binary_name),
+        os.path.join(root, "web-lab", binary_name),
+    ]
+    tools_dir = os.path.normpath(os.path.join(root, "..", "tools"))
+    if os.path.isdir(tools_dir):
+        candidates.append(os.path.join(tools_dir, binary_name))
+    for candidate in candidates:
+        if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
+            return candidate
+    return candidates[0]
 
 
 def _healthz(port: int, timeout=1.0):

@@ -19,9 +19,13 @@ and their deliberate limits (no HttpOnly cookies, no body capture).
 ## Engine-style lab
 
 Like [[source-lab]], Web Lab boots no VM: `./labctl web <command>` execs
-`make -C web-lab` ([[web-lab/Makefile]]), and
+`make -C web-lab` ([[web-lab/Makefile]]).
+
 [[web-lab/scripts/setup-ubuntu.sh]] installs the Rust toolchain via rustup if
 cargo is missing, then builds the engine with `cargo build --release`.
+For desktop distribution, [[app/scripts/stage-runtime.mjs]] bundles the Web Lab
+manifest and pre-built engine binary into the staged app resources, enabling
+ready-to-use in-app browsing without requiring host Cargo installation.
 
 Profiles are webview data directories (or incognito for `ephemeral`);
 [[web-lab/knowledge/sessions.md]] documents the per-platform isolation limits
