@@ -19,9 +19,13 @@ and their deliberate limits (no HttpOnly cookies, no body capture).
 ## Engine-style lab
 
 Like [[source-lab]], Web Lab boots no VM: `./labctl web <command>` execs
-`make -C web-lab` ([[web-lab/Makefile]]), and
+`make -C web-lab` ([[web-lab/Makefile]]).
+
 [[web-lab/scripts/setup-ubuntu.sh]] installs the Rust toolchain via rustup if
 cargo is missing, then builds the engine with `cargo build --release`.
+For desktop distribution, [[app/scripts/stage-runtime.mjs]] bundles the Web Lab
+manifest and pre-built engine binary into the staged app resources, enabling
+ready-to-use in-app browsing without requiring host Cargo installation.
 
 Profiles are webview data directories (or incognito for `ephemeral`);
 [[web-lab/knowledge/sessions.md]] documents the per-platform isolation limits
@@ -36,9 +40,20 @@ registers the lab (`native-rust` provider and action plans).
 
 The dashboard's generic lab page covers readiness and actions; the workbench
 at `/web-lab/` ([[dashboard/src/views/web-lab/pages.tsx]]) opens windows,
-manages injections, runs eval and tails the event log. It is a console-only
-route: it appears in neither the Pages deploy keep-list nor the public
-navigation.
+manages injections, runs eval and tails the event log. A docked right panel
+is open by default (collapsible to the centered workbench or expandable to
+full width) showing a live preview of the active window: window tabs bar,
+address bar navigation, back/reload/forward buttons, polled JPEG snapshots from
+`GET /api/web/windows/{id}/screenshot`, and a device size toggle that resizes
+the real window through `POST /api/web/windows/{id}/viewport` (presets plus a
+custom width/height pair, clamped to 200–4000). The preview is view-only —
+clicks happen in the real window — and capture is macOS-only:
+[[web-lab/browser/src/capture.rs]] asks the embedded WKWebView for a snapshot
+through tao's `ns_view`, so the window server never sees another process's pixels
+and no Screen Recording permission is needed; other hosts answer with a clear
+refusal. Both routes return JSON (base64 payload), so the console proxy passes
+them through unchanged. It is a console-only route: it appears in neither the
+Pages deploy keep-list nor the public navigation.
 
 ## Safety stance
 

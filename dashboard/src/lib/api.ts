@@ -8,7 +8,7 @@
 import { useEffect, useReducer } from "react";
 import type { CapabilityCatalog } from "../health/capabilities";
 
-export type LabId = "android" | "windows" | "linux" | "ios" | "macos" | "source" | "web";
+export type LabId = "android" | "windows" | "winapps" | "linux" | "ios" | "macos" | "source" | "web";
 export type LabState = "ready" | "needs-setup" | "unavailable";
 
 export interface HostTool {
@@ -34,7 +34,7 @@ export interface HostInfo {
   kvm: { present: boolean; usable: boolean };
   wsl: { guest: boolean; distributions: string[] };
   runtime: string | null;
-  xcode: { installed: boolean; iosRuntime: boolean; iosDevice: boolean } | null;
+  xcode: { installed: boolean; iosRuntime: boolean; iosDevice: boolean; developerDir?: string | null; xcodeApp?: string | null } | null;
   python: string;
   root: string;
   tools: HostTool[];
@@ -168,6 +168,29 @@ export interface IosSimulatorInfo {
   booted: IosSimulatorDevice[];
   configuredDevice: string | null;
 }
+/** One real (paired or connected) iOS device from GET /api/labs/ios/devices. */
+export interface IosRealDevice {
+  udid: string;
+  name: string;
+  osVersion: string;
+  state: string;
+  paired?: boolean;
+  transport?: string | null;
+  lastSeen?: string | null;
+}
+export interface IosDevicesInfo {
+  available: boolean;
+  reason: string | null;
+  devices: IosRealDevice[];
+}
+/** Host CPU/RAM pressure plus the Simulator.app cost, for the drawer's watchdog. */
+export interface IosResources {
+  available: boolean;
+  reason: string | null;
+  cpu: { percent: number | null; warn: number; critical: number } | null;
+  memory: { totalBytes: number | null; usedBytes: number | null; percent: number | null; warn: number; critical: number } | null;
+  simulator: { running: boolean; cpuPercent: number | null; rssBytes: number | null } | null;
+}
 export interface MacWindow {
   windowId: number;
   pid: number;
@@ -281,6 +304,76 @@ export interface MacAuditState {
   recording: boolean;
   rows: MacAuditRow[];
 }
+export interface MacDisplay {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  scale: number;
+}
+export interface MacDisplaysInfo {
+  available: boolean;
+  reason: string | null;
+  displays: MacDisplay[];
+}
+export interface MacCapabilities {
+  platform: string;
+  available: boolean;
+  engine: "ax-helper" | "osascript" | null;
+  helperBuilt: boolean;
+  canObserve: string[];
+  canAct: { click: boolean; input: string[]; keys: string[]; setValue: boolean; perform: boolean; deepInspect: boolean };
+  safety: {
+    controlTimeoutSec: number;
+    submitKinds: string[];
+    singleOwner: boolean;
+    panicStop: boolean;
+    auditMax: number;
+    streamCapSec: number;
+    allowlist: boolean;
+  };
+  control: MacControlState;
+}
+export interface MacPermission {
+  granted: boolean | null;
+  grantTo: string;
+  hint: string | null;
+}
+export interface MacPermissions {
+  accessibility: MacPermission;
+  screenRecording: MacPermission;
+  responsibleApp: string | null;
+}
+export type MacPane = "accessibility" | "screen-recording";
+export interface MacSearchInfo {
+  windowId: number;
+  app: string;
+  revision: string;
+  engine: string;
+  query: string;
+  count: number;
+  hits: MacElement[];
+}
+/** One visible desktop window in the current Windows session (console/winapps.py). */
+export interface WinApp {
+  /** Stable HWND; Windows can reuse an HWND only after the window is gone. */
+  windowId: number;
+  pid: number;
+  app: string;
+  /** Whether the owning process is elevated; null when Windows would not report it. */
+  elevated: boolean | null;
+  title: string;
+  className: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+export interface WinAppsInfo {
+  available: boolean;
+  reason: string | null;
+  windows: WinApp[];
+}
 export interface Report {
   name: string;
   url: string;
@@ -319,13 +412,13 @@ export interface CleanupResult {
   totals: { items: number; trashed: number; deleted: number; skipped: number; failed: number; bytes: number };
 }
 export interface CleanupJob {
-  id: string; kind: "scan" | "plan" | "clean"; state: "running" | "done" | "cancelled" | "failed";
-  request: { entryIds?: string[]; mode?: "trash" | "delete"; planId?: string };
+  id: string; kind: "scan" | "plan" | "clean" | "relocation-plan" | "relocation-run"; state: "running" | "done" | "cancelled" | "failed";
+  request: { entryIds?: string[]; mode?: "trash" | "delete"; planId?: string; action?: string; entryId?: string; destination?: string; previewId?: string };
   progress: Record<string, string | number> | null;
-  result: CleanupScan | CleanupPlan | CleanupResult | null;
+  result: CleanupScan | CleanupPlan | CleanupResult | CleanupRelocationPlan | CleanupRelocationRun | null;
   error: string | null;
 }
-export interface CleanupHistory { entries: { id: number; result: CleanupResult; hmac: string }[]; total: number; verified: boolean }
+export interface CleanupHistory { entries: { id: number; result: CleanupResult | CleanupRelocationRun; hmac: string }[]; total: number; verified: boolean }
 
 export interface CleanupContainerCapabilities {
   available: boolean; engine: "docker" | "podman" | null; reason: string;
@@ -345,7 +438,8 @@ export interface CleanupVMInventory {
   unavailable: { id: string; root: string | null; reason: string }[];
 }
 export interface CleanupAuxJob<T> {
-  id: string; kind: "container-prune" | "vm-scan" | "leftovers"; state: "running" | "done" | "cancelled" | "failed";
+  id: string; kind: "container-prune" | "vm-scan" | "leftovers" | "relocation-plan" | "relocation-run"; state: "running" | "done" | "cancelled" | "failed";
+  progress: Record<string, string | number> | null;
   result: T | null; error: string | null;
 }
 export interface CleanupCrossLeftovers {
@@ -414,6 +508,38 @@ export interface CleanupVolumes {
   volumes: CleanupVolume[];
   homeVolume: string | null; warnings: string[]; error: string | null;
 }
+/** CLN-27: one relocatable catalog entry from GET /api/cleanup/relocation. */
+export type CleanupRelocationState = "local_only" | "linked_ok" | "missing_link" | "broken_link" | "wrong_target" | "conflict" | "missing";
+export interface CleanupRelocationEntry {
+  entryId: string; name: string; path: string;
+  relocatable: boolean; interrupted: boolean;
+}
+export interface CleanupRelocationDestination {
+  mountPoint: string; freeBytes: number; totalBytes: number; kind: string;
+}
+export interface CleanupRelocationStatus {
+  platform: string;
+  entries: CleanupRelocationEntry[];
+  destinations: CleanupRelocationDestination[];
+}
+/** One ordered typed step of a relocation plan (copy → verify → link → …). */
+export interface CleanupRelocationStep { op: string; src: string; dst: string }
+export interface CleanupRelocationPlan {
+  action: "move" | "restore" | "relink" | "resume";
+  entryId: string; entryName: string; homePath: string; storePath: string; destination: string;
+  files: number; sizeBytes: number; freeBytes: number;
+  state: CleanupRelocationState;
+  steps: CleanupRelocationStep[];
+  fingerprint: { files: number; bytes: number };
+  previewId: string;
+}
+export interface CleanupRelocationRun {
+  entryId: string; action: string;
+  homePath?: string; storePath?: string;
+  status: string; error?: string;
+  bytesRelocated?: number | null; bytesRemoved?: number | null;
+  cancelled?: boolean; stepsDone?: number; stepsTotal?: number;
+}
 /** CLNP-14: one bookmark — a catalog-entry reference with its behaviours. */
 export interface BookmarkRecord {
   entryId: string; createdAt: number; priority: number; quickClean: boolean;
@@ -449,7 +575,16 @@ export interface WebEngineHealth {
   ok: boolean; engine: string; version: string; port: number; windows: number; eventCount: number;
 }
 export interface WebWindowState {
-  id: number; url: string; profile: string; user_agent: string | null; viewport: string; created_at: number;
+  id: number; url: string; profile: string; user_agent: string | null; viewport: string;
+  /** Current logical size in CSS pixels; the preview panel reads it. */
+  size?: [number, number];
+  created_at: number;
+}
+export interface WebScreenshot {
+  ok: boolean; format: string; dataBase64: string;
+}
+export interface WebViewportResult {
+  ok: boolean; applied: boolean; viewport: string; size: [number, number];
 }
 export interface WebInjection {
   id: string; name: string; code: string; enabled: boolean;
@@ -539,10 +674,18 @@ export const api = {
   cleanupCancel: (id: string) => post<CleanupJob>(`/api/cleanup/jobs/${encodeURIComponent(id)}/cancel`),
   cleanupContainers: () => call<CleanupContainerCapabilities>("/api/cleanup/containers"),
   cleanupPermissions: () => call<CleanupPermissions>("/api/cleanup/permissions"),
+  /** The grant round-trip: name a permission, the console opens System Settings. */
+  cleanupPermissionsOpen: (permissionId: string) => post<{ permissionId: string; opened: string }>("/api/cleanup/permissions/open-settings", { permissionId }),
   cleanupMonitor: () => call<CleanupMonitorStatus>("/api/cleanup/monitor"),
   cleanupMonitorConfig: (config: CleanupMonitorConfig) => post<CleanupMonitorStatus>("/api/cleanup/monitor/config", config),
   cleanupMonitorEvaluate: () => post<CleanupMonitorStatus>("/api/cleanup/monitor/evaluate"),
   cleanupVolumes: () => call<CleanupVolumes>("/api/cleanup/volumes"),
+  /** CLN-27: relocatable entries and destination volumes, then plan → confirm → run. */
+  cleanupRelocation: () => call<CleanupRelocationStatus>("/api/cleanup/relocation"),
+  cleanupRelocationPlan: (action: "move" | "restore" | "relink" | "resume", entryId: string, destination: string) =>
+    post<CleanupAuxJob<CleanupRelocationPlan>>("/api/cleanup/relocation/plan", { action, entryId, destination }),
+  cleanupRelocationRun: (previewId: string) =>
+    post<CleanupAuxJob<CleanupRelocationRun>>("/api/cleanup/relocation/run", { previewId }),
   /** CLW-02: the widget snapshot — builds and publishes in one call. */
   cleanupWidget: () => call<CleanupWidgetSnapshot>("/api/cleanup/widget"),
   cleanupBookmarks: () => call<BookmarksPayload>("/api/cleanup/bookmarks"),
@@ -568,7 +711,14 @@ export const api = {
   config: (lab: LabId) => call<LabConfig>(`/api/labs/${lab}/config`),
   monitor: (lab: LabId) => call<LabMonitor>(`/api/labs/${lab}/monitor`),
   iosSimulator: () => call<IosSimulatorInfo>(`/api/labs/ios/simulator`),
+  iosDevices: () => call<IosDevicesInfo>(`/api/labs/ios/devices`),
+  /** Active reachability probe for one device: devicectl connects its tunnel to answer. */
+  iosDeviceCheck: (udid: string) =>
+    call<{ reachable: boolean; reason?: string | null; name?: string; osVersion?: string; developerMode?: boolean; state?: string }>(`/api/labs/ios/devices/check?udid=${encodeURIComponent(udid)}`),
+  iosResources: () => call<IosResources>(`/api/labs/ios/resources`),
   iosScreenshotUrl: "/api/labs/ios/screenshot",
+  iosSimulatorScreenshotUrl: (udid: string) => `/api/labs/ios/screenshot?device=${encodeURIComponent(udid)}`,
+  iosRealScreenshotUrl: (udid: string) => `/api/labs/ios/screenshot?udid=${encodeURIComponent(udid)}`,
   macosApps: () => call<MacAppsInfo>("/api/labs/macos/apps"),
   macosAppScreenshotUrl: (windowId: number) => `/api/labs/macos/apps/${windowId}/screenshot`,
   macosElements: (windowId: number, revision?: string) =>
@@ -593,6 +743,15 @@ export const api = {
     del<{ closed: boolean }>(`/api/labs/macos/session/${encodeURIComponent(bundleId)}`),
   macosAudit: () => call<MacAuditState>("/api/labs/macos/audit"),
   macosAuditUrl: "/api/labs/macos/audit.json",
+  macosDisplays: () => call<MacDisplaysInfo>("/api/labs/macos/displays"),
+  macosCapabilities: () => call<MacCapabilities>("/api/labs/macos/capabilities"),
+  macosPermissions: () => call<MacPermissions>("/api/labs/macos/permissions"),
+  macosRequestAccess: (pane: MacPane) =>
+    post<{ ok: boolean; pane: MacPane; trusted: boolean | null; openedPane: boolean; grantTo: string | null }>(
+      "/api/labs/macos/permission/request", { pane }),
+  macosSearch: (windowId: number, query: string) =>
+    call<MacSearchInfo>(`/api/labs/macos/apps/${windowId}/search?q=${encodeURIComponent(query)}`),
+  macosEventsUrl: "/api/labs/macos/events",
   macosStop: () => post<{ ok: boolean; sessionsClosed: string[] }>("/api/labs/macos/stop"),
   macosAxWindows: (pid: number) => call<{ windows: MacAxWindow[] }>(`/api/labs/macos/apps/${pid}/windows`),
   macosMenubar: (pid: number) => call<{ menubar: MacMenuNode }>(`/api/labs/macos/apps/${pid}/menubar`),
@@ -603,6 +762,8 @@ export const api = {
     post<{ ok: boolean; actionSent: boolean; verify?: Record<string, unknown> }>("/api/labs/macos/element/set", input),
   macosAxPerform: (input: { pid: number; path: string; identity?: string; action: string; windowId?: number }) =>
     post<{ ok: boolean; actionSent: boolean }>("/api/labs/macos/element/perform", input),
+  winappsApps: () => call<WinAppsInfo>("/api/labs/winapps/apps"),
+  winappsAppScreenshotUrl: (windowId: number) => `/api/labs/winapps/apps/${windowId}/screenshot`,
   plan: (request: LabRequest) => post<{ plan: LabPlan; token: string }>("/api/labs/plan", { request }),
   start: (request: LabRequest, token: string) => post<LabJob>("/api/labs/start", { request, token }),
   jobs: () => call<{ jobs: LabJob[] }>("/api/jobs"),
@@ -637,6 +798,13 @@ export const api = {
   webCloseWindow: (id: number) => call<{ ok: boolean; closed: boolean }>(`/api/web/windows/${id}`, { method: "DELETE", headers: { "X-OSLab": "1" } }),
   webNavigate: (id: number, url: string) => post<{ ok: boolean }>(`/api/web/windows/${id}/navigate`, { url }),
   webReload: (id: number) => post<{ ok: boolean }>(`/api/web/windows/${id}/reload`),
+  /** Live preview: a polled JPEG snapshot of the window (macOS capture, view-only). */
+  webScreenshot: (id: number) => call<WebScreenshot>(`/api/web/windows/${id}/screenshot`),
+  /** The device toggle: a preset name or an explicit width/height pair. */
+  webViewport: (id: number, request: { viewport?: string; width?: number; height?: number }) =>
+    post<WebViewportResult>(`/api/web/windows/${id}/viewport`, request),
+  webBack: (id: number) => post<{ ok: boolean }>(`/api/web/windows/${id}/back`),
+  webForward: (id: number) => post<{ ok: boolean }>(`/api/web/windows/${id}/forward`),
   webEval: (id: number, code: string) => post<{ ok: boolean; applied: boolean }>(`/api/web/windows/${id}/eval`, { code }),
   webCookies: (id: number) => post<{ ok: boolean }>(`/api/web/windows/${id}/cookies`),
   webStorage: (id: number) => post<{ ok: boolean }>(`/api/web/windows/${id}/storage`),

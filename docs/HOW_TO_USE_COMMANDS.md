@@ -218,6 +218,7 @@ Run from the checkout root as `make -C ios-lab TARGET [VARIABLE=value ...]`.
 - `mac-status` — macOS host: show Xcode, booted simulators and Appium state
 - `mac-ax-helper` — macOS host: compile the native AX helper for rich element reads (MIR-09)
 - `mac-mcp` — macOS host: run the guarded MCP server for computer-use agents (MIR-12)
+- `mac-cleanup-verify` — macOS host: audit the running app's Cleanup panel + scans (BOOKMARK=1 RECORD=1 PORT=)
 
 ## Make targets: `android-lab/lab/Makefile`
 
@@ -673,6 +674,7 @@ Developer/maintainer commands; use only when relevant to the task.
 - `npm run check` — `tsc --noEmit`
 - `npm run test:e2e` — `playwright test`
 - `npm run test:i18n` — `node scripts/check-translations.mjs`
+- `npm run test:tooling` — `node --test scripts/affected.test.mjs scripts/i18n-merge.test.mjs`
 - `npm run test:source:model` — `node --test scripts/source-brain-model.test.mjs`
 - `npm run test:how-to-use:pages` — `node scripts/how-to-use-pages-smoke.mjs`
 - `npm run test:source:pages` — `node scripts/source-pages-smoke.mjs`

@@ -40,7 +40,7 @@ import uuid
 
 # ── Static lab model ─────────────────────────────────────────────────────────
 
-LAB_ORDER = ["android", "windows", "linux", "ios", "macos", "source", "web"]
+LAB_ORDER = ["android", "windows", "winapps", "linux", "ios", "macos", "source", "web"]
 
 LABS = {
     "source": {"label": "Source Lab", "dir": "source-lab", "labctl": "source", "containers": [],
@@ -61,6 +61,13 @@ LABS = {
         "containers": ["win-lab"],
         "disk_default": "64G",
         "summary": "Windows in Docker with KVM, a web desktop, RDP and shared storage.",
+    },
+    "winapps": {
+        "label": "Windows Apps Lab",
+        "dir": "console",  # the lab is console/winapps.py; there is no lab folder of its own
+        "labctl": None,
+        "containers": [],
+        "summary": "Read-only mirror of visible desktop applications on this Windows host.",
     },
     "linux": {
         "label": "Linux Lab",
@@ -224,9 +231,14 @@ def _managed_idb() -> str | None:
     return path if os.path.isfile(path) and os.access(path, os.X_OK) else None
 
 
+def _idb_companion() -> str | None:
+    """Homebrew's idb-companion formula installs `idb_companion` (underscore); accept both spellings."""
+    return shutil.which("idb_companion") or shutil.which("idb-companion")
+
+
 def _which(name: str) -> str | None:
     found = shutil.which(name)
-    return found or {"appium": _managed_appium, "idb": _managed_idb}.get(name, lambda: None)()
+    return found or {"appium": _managed_appium, "idb": _managed_idb, "idb-companion": _idb_companion}.get(name, lambda: None)()
 
 
 def _read(path: str) -> str:
@@ -304,12 +316,24 @@ def container_runtime() -> str | None:
 
 
 def xcode_status() -> dict:
-    """Full Xcode and an available iOS Simulator, not just the command-line tools."""
+    """Full Xcode and an available iOS Simulator, not just the command-line tools.
+
+    Detection follows ``xcode-select``/PATH, never an assumed install path, so a
+    copy of Xcode on a non-system volume is reported with its real location.
+    """
     if host_os() != "macos":
-        return {"installed": False, "iosRuntime": False, "iosDevice": False}
+        return {"installed": False, "developerDir": None, "xcodeApp": None, "iosRuntime": False, "iosDevice": False}
     installed = _capture(["xcodebuild", "-version"], timeout=5)[0] == 0
+    developer_dir = None
+    if installed:
+        code, output = _capture(["xcode-select", "-p"], timeout=5)
+        if code == 0:
+            developer_dir = output.strip() or None
+    xcode_app = None
+    if developer_dir and developer_dir.endswith("/Contents/Developer"):
+        xcode_app = developer_dir[: -len("/Contents/Developer")]
     if not installed:
-        return {"installed": False, "iosRuntime": False, "iosDevice": False}
+        return {"installed": False, "developerDir": None, "xcodeApp": None, "iosRuntime": False, "iosDevice": False}
     code, output = _capture(["xcrun", "simctl", "list", "-j", "devices", "available"], timeout=10)
     try:
         devices = json.loads(output)["devices"] if code == 0 else {}
@@ -319,7 +343,8 @@ def xcode_status() -> dict:
         ios_device = False
     code, output = _capture(["xcrun", "simctl", "list", "runtimes"], timeout=10)
     ios_runtime = code == 0 and any(line.startswith("iOS ") for line in output.splitlines())
-    return {"installed": installed, "iosRuntime": ios_runtime, "iosDevice": ios_device}
+    return {"installed": installed, "developerDir": developer_dir, "xcodeApp": xcode_app,
+            "iosRuntime": ios_runtime, "iosDevice": ios_device}
 
 
 # ── iOS Simulator panel (native macOS) ───────────────────────────────────────
@@ -364,15 +389,17 @@ def ios_simulator(root: str) -> dict:
             "configuredDevice": config.get("SIM_DEVICE") or None}
 
 
-def ios_screenshot() -> bytes:
-    """A PNG of the booted simulator's screen. Raises PlanError when nothing is booted."""
+def ios_screenshot(udid: str | None = None) -> bytes:
+    """A PNG of the selected booted simulator, or the sole/default booted device."""
+    if udid and not UDID.fullmatch(udid):
+        raise PlanError("That simulator id does not look like a UDID")
     code, output = _capture(["xcrun", "simctl", "list", "devices"], timeout=15)
-    if code != 0 or not any("Booted" in line for line in output.splitlines()):
-        raise PlanError("No iOS Simulator is booted; attach one first")
+    if code != 0 or not any("Booted" in line and (not udid or udid in line) for line in output.splitlines()):
+        raise PlanError("The selected iOS Simulator is not booted; attach it first" if udid else "No iOS Simulator is booted; attach one first")
     fd, path = tempfile.mkstemp(suffix=".png")
     try:
         os.close(fd)
-        code, output = _capture(["xcrun", "simctl", "io", "booted", "screenshot", "--type=png", path], timeout=30)
+        code, output = _capture(["xcrun", "simctl", "io", udid or "booted", "screenshot", "--type=png", path], timeout=30)
         if code != 0:
             raise PlanError("Could not take a simulator screenshot: " + output.strip()[:200])
         with open(path, "rb") as f:
@@ -387,15 +414,284 @@ def ios_screenshot() -> bytes:
             pass
 
 
+def ios_real_device_screenshot(udid: str) -> bytes:
+    """Capture a selected physical device with Xcode's devicectl, without starting automation."""
+    if not isinstance(udid, str) or not UDID.fullmatch(udid):
+        raise PlanError("That device id does not look like a UDID")
+    if host_os() != "macos" or not _which("xcrun"):
+        raise PlanError("Xcode device capture is not available on this Mac")
+    fd, path = tempfile.mkstemp(suffix=".png")
+    try:
+        os.close(fd)
+        os.unlink(path)  # devicectl creates its destination file.
+        code, output = _capture(["xcrun", "devicectl", "device", "capture", "screenshot",
+                                 "--device", udid, "--destination", path], timeout=30)
+        if code != 0:
+            raise PlanError("Could not capture the real device: " + (output.strip().splitlines()[-1][:200] if output.strip() else "the device did not answer"))
+        with open(path, "rb") as f:
+            png = f.read()
+        if not png.startswith(b"\x89PNG"):
+            raise PlanError("The real-device screenshot was not a readable PNG")
+        return png
+    finally:
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
+
+
+def _os_version(value) -> str:
+    """devicectl reports an osVersion string or a {major, minor, patch} dict; both become a string."""
+    if isinstance(value, dict):
+        parts = [value.get(key) for key in ("major", "minor", "patch")]
+        return ".".join(str(part) for part in parts if part is not None)
+    return str(value or "")
+
+
+def ios_devices() -> dict:
+    """Real iOS devices (connected or paired) via `xcrun devicectl`, read-only.
+
+    Screen capture is available separately; driving a device still needs
+    Developer Mode and a signed WebDriverAgent (ios-lab/mac/README.md).
+    """
+    if host_os() != "macos" or not _which("xcrun"):
+        return {"available": False, "reason": "Xcode and its device tooling are not usable on this Mac",
+                "devices": []}
+    fd, path = tempfile.mkstemp(suffix=".json")
+    try:
+        os.close(fd)
+        code, output = _capture(["xcrun", "devicectl", "list", "devices", "--json-output", path], timeout=15)
+        if code != 0:
+            reason = output.strip().splitlines()[-1][:200] if output.strip() else "devicectl failed"
+            return {"available": False, "reason": reason, "devices": []}
+        try:
+            with open(path, encoding="utf-8") as f:
+                data = json.load(f)
+        except (OSError, ValueError):
+            return {"available": False, "reason": "devicectl returned unreadable output", "devices": []}
+    finally:
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
+    devices = []
+    for entry in (data.get("result") or {}).get("devices") or []:
+        if not isinstance(entry, dict):
+            continue
+        # devicectl also lists simulators here; visibilityClass separates them from real hardware.
+        if (entry.get("visibilityClass") or "") == "simulators":
+            continue
+        props = entry.get("deviceProperties") or {}
+        hardware = entry.get("hardwareProperties") or {}
+        connection = entry.get("connectionProperties") or {}
+        # transportType names how the device is paired: localNetwork (Wi-Fi) vs a USB
+        # wire. A Wi-Fi-paired device stays listed even while its tunnel is down.
+        devices.append({
+            "udid": entry.get("identifier") or hardware.get("udid") or "",
+            "name": props.get("name") or "",
+            "osVersion": _os_version(props.get("osVersionNumber") or props.get("osVersion")),
+            "state": connection.get("tunnelState") or connection.get("pairingState") or "",
+            "paired": (connection.get("pairingState") or "") == "paired",
+            "transport": connection.get("transportType") or None,
+            "lastSeen": connection.get("lastConnectionDate") or None,
+        })
+    devices.sort(key=lambda d: (d["name"], d["udid"]))
+    return {"available": True, "reason": None, "devices": devices}
+
+
+def ios_device_check(udid: str) -> dict:
+    """Check a device's current tunnel state; details can succeed for an offline paired device."""
+    if not isinstance(udid, str) or not UDID.match(udid):
+        raise PlanError("That device id does not look like a UDID")
+    if host_os() != "macos" or not _which("xcrun"):
+        return {"reachable": False, "reason": "The device tooling is not usable on this Mac"}
+    fd, path = tempfile.mkstemp(suffix=".json")
+    try:
+        os.close(fd)
+        code, output = _capture(["xcrun", "devicectl", "device", "info", "details", "--device", udid,
+                                 "--json-output", path], timeout=25)
+        if code != 0:
+            reason = output.strip().splitlines()[-1][:200] if output.strip() else "the device did not answer"
+            return {"reachable": False, "reason": reason}
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, ValueError):
+        return {"reachable": False, "reason": "devicectl returned unreadable output"}
+    finally:
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
+    result = data.get("result") or {}
+    props = result.get("deviceProperties") or {}
+    connection = result.get("connectionProperties") or {}
+    state = connection.get("tunnelState") or "unavailable"
+    reachable = state == "connected"
+    return {"reachable": reachable,
+            "reason": None if reachable else f"Device is paired, but its connection tunnel is {state}.",
+            "name": props.get("name") or "",
+            "osVersion": _os_version(props.get("osVersionNumber") or props.get("osVersion")),
+            "developerMode": (props.get("developerModeStatus") or "") == "enabled",
+            "state": state}
+
+
+#: The previous kern.cp_time reading; CPU percent is the delta between polls.
+_CPU_SAMPLE: dict = {"ticks": None}
+_CPU_WARN, _CPU_CRITICAL = 85.0, 95.0
+_MEM_WARN, _MEM_CRITICAL = 85.0, 92.0
+
+
+def _memory_pressure(run) -> dict:
+    """Total vs used RAM on macOS: vm_stat's free + inactive + speculative pages count as available."""
+    code, output = run(["sysctl", "-n", "hw.memsize"], timeout=5)
+    if code != 0:
+        return {"totalBytes": None, "usedBytes": None, "percent": None}
+    try:
+        total = int(output.strip())
+    except ValueError:
+        return {"totalBytes": None, "usedBytes": None, "percent": None}
+    code, output = run(["vm_stat"], timeout=5)
+    if code != 0:
+        return {"totalBytes": total, "usedBytes": None, "percent": None}
+    page_size = 4096
+    available = 0
+    for line in output.splitlines():
+        if "page size of" in line:
+            digits = "".join(ch for ch in line if ch.isdigit())
+            try:
+                page_size = int(digits)
+            except ValueError:
+                pass
+            continue
+        for label in ("Pages free", "Pages inactive", "Pages speculative"):
+            if line.startswith(label):
+                digits = "".join(ch for ch in line.rsplit(":", 1)[-1] if ch.isdigit())
+                try:
+                    available += int(digits) * page_size
+                except ValueError:
+                    pass
+    used = max(total - available, 0)
+    return {"totalBytes": total, "usedBytes": used,
+            "percent": round(used * 100.0 / total, 1) if total else None}
+
+
+def _cpu_ticks() -> list[int] | None:
+    """Host CPU ticks (user, system, idle, nice) via mach host_statistics64 — no subprocess.
+
+    kern.cp_time is gone on current macOS; this is the same source Activity
+    Monitor uses. Returns None honestly when the mach call fails.
+    """
+    try:
+        libc = ctypes.CDLL("/usr/lib/libSystem.B.dylib")
+        libc.mach_host_self.restype = ctypes.c_uint
+        libc.mach_host_self.argtypes = []
+        libc.host_statistics64.restype = ctypes.c_int
+        libc.host_statistics64.argtypes = [ctypes.c_uint, ctypes.c_int, ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_uint)]
+        libc.mach_port_deallocate.argtypes = [ctypes.c_uint, ctypes.c_uint]
+        host = libc.mach_host_self()
+        ticks = (ctypes.c_int * 4)()
+        count = ctypes.c_uint(4)
+        kr = libc.host_statistics64(host, 3, ticks, ctypes.byref(count))  # HOST_CPU_LOAD_INFO
+        libc.mach_port_deallocate(host, host)
+        if kr != 0:
+            return None
+        return [ticks[i] for i in range(4)]
+    except (OSError, ValueError):
+        return None
+
+
+def _cpu_percent(run=None) -> float | None:
+    """CPU busy-percent as the tick delta since the previous call (None on the first poll)."""
+    ticks = _cpu_ticks()
+    if not ticks or len(ticks) < 4:
+        return None
+    previous = _CPU_SAMPLE["ticks"]
+    _CPU_SAMPLE["ticks"] = ticks
+    if not previous:
+        return None
+    busy = [b - p for b, p in zip(ticks[:3], previous[:3])]
+    idle = ticks[3] - previous[3]
+    total = sum(busy) + idle
+    if total <= 0:
+        return None
+    return round(min(sum(busy) * 100.0 / total, 100.0), 1)
+
+
+def _simulator_process(run) -> dict:
+    """CPU and RSS of Simulator.app and its helpers; the honest proxy for what the booted device costs."""
+    code, output = run(["ps", "-axo", "comm=,%cpu=,rss="], timeout=5)
+    if code != 0:
+        return {"running": False, "cpuPercent": None, "rssBytes": None}
+    cpu, rss = 0.0, 0
+    for line in output.splitlines():
+        parts = line.strip().rsplit(None, 2)
+        if len(parts) != 3 or "Simulator.app" not in parts[0]:
+            continue
+        try:
+            cpu += float(parts[1])
+            rss += int(parts[2]) * 1024
+        except ValueError:
+            continue
+    return {"running": cpu > 0 or rss > 0, "cpuPercent": round(cpu, 1), "rssBytes": rss or None}
+
+
+def ios_resources() -> dict:
+    """Host CPU/RAM pressure plus what Simulator.app costs, for the drawer's watchdog.
+
+    CPU percent is None on the first poll (it needs a delta); memory is a
+    vm_stat approximation of Activity Monitor's "used".
+    """
+    if host_os() != "macos":
+        return {"available": False, "reason": "Resource monitoring runs on macOS only", "cpu": None, "memory": None, "simulator": None}
+    memory = _memory_pressure(_capture)
+    cpu = _cpu_percent(_capture)
+    simulator = _simulator_process(_capture)
+    return {"available": True, "reason": None,
+            "cpu": {"percent": cpu, "warn": _CPU_WARN, "critical": _CPU_CRITICAL},
+            "memory": {**memory, "warn": _MEM_WARN, "critical": _MEM_CRITICAL},
+            "simulator": simulator}
+
+
 # ── macOS app mirror ─────────────────────────────────────────────────────────
 # Read-only host inspection for the app mirror panel: the window list comes from CoreGraphics
 # through ctypes (the osascript ObjC bridge segfaults on current macOS), a window's pixels come
 # from `screencapture -l` and its accessibility tree from System Events. Control mode posts real
 # clicks through the same macos-app.sh click action the previewed flow uses.
 
+def _load_macos_config() -> dict:
+    """One config file with a clear precedence (QcU parity): environment > ios-lab/mac/mac-lab.json
+    > defaults. Missing or malformed files fall back to the defaults; values are clamped so a
+    typo cannot turn the safety timers off."""
+    limits = {"controlTimeout": (600, 30, 3600, "OSLAB_MAC_CONTROL_TIMEOUT"),
+              "auditMax": (500, 50, 5000, "OSLAB_MAC_AUDIT_MAX"),
+              "streamCap": (600, 30, 3600, "OSLAB_MAC_STREAM_CAP")}
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "ios-lab", "mac", "mac-lab.json")
+    try:
+        with open(path, encoding="utf-8") as f:
+            stored = json.load(f)
+        if not isinstance(stored, dict):
+            stored = {}
+    except (OSError, ValueError):
+        stored = {}
+    config = {}
+    for key, (default, low, high, env) in limits.items():
+        value = default
+        for candidate in (os.environ.get(env), stored.get(key)):
+            try:
+                number = int(candidate)
+            except (TypeError, ValueError):
+                continue
+            value = min(high, max(low, number))
+            break
+        config[key] = value
+    return config
+
+
+_MACOS_CONFIG = _load_macos_config()
+
 _MACOS_CONTROL = {"armed": False, "armedAt": 0.0, "owner": None, "ownerAt": 0.0}
 _MACOS_CONTROL_LOCK = threading.Lock()
-_MACOS_CONTROL_TIMEOUT = 600  # control mode disarms itself after ten idle minutes
+_MACOS_CONTROL_TIMEOUT = _MACOS_CONFIG["controlTimeout"]  # control mode disarms itself after idle time (default ten minutes)
 _MACOS_STREAM_EPOCH = 0  # bumped by the panic stop; every stream loop checks it and exits
 
 # MIR-11 agent-safety layer: actions that can submit, send or overwrite get one more gate
@@ -617,6 +913,11 @@ _AX_ELEMENT_CAP = 400
 
 
 def _ax_helper(root: str) -> str | None:
+    """The native helper binary. OSLAB_AX_HELPER points at a stand-in (the fake helper used by
+    tests and Linux CI) so the act/verify paths run without a Mac."""
+    override = os.environ.get("OSLAB_AX_HELPER")
+    if override:
+        return override if os.path.isfile(override) and os.access(override, os.X_OK) else None
     path = os.path.join(root, "ios-lab", "mac", "build", "ax-helper")
     return path if os.path.isfile(path) and os.access(path, os.X_OK) else None
 
@@ -992,8 +1293,10 @@ def macos_control_arm(root: str, armed: bool, owner: str | None = None) -> dict:
     with _MACOS_CONTROL_LOCK:
         if armed and _MACOS_CONTROL["armed"] and _MACOS_CONTROL["owner"] \
                 and owner and owner != _MACOS_CONTROL["owner"]:
-            raise PlanError("Another client already holds armed control (single-owner input, MIR-11)",
-                            code="INPUT_BUSY", retry="never")
+            held = int(time.time() - _MACOS_CONTROL["armedAt"])
+            raise PlanError(f"{_MACOS_CONTROL['owner']} already holds armed control (armed {held}s ago); "
+                            "it must disarm or stop the session before another client can arm "
+                            "(single-owner input, MIR-11)", code="ARMED_BY_OTHER", retry="never")
         _MACOS_CONTROL["armed"] = armed
         _MACOS_CONTROL["armedAt"] = time.time()
         _MACOS_CONTROL["owner"] = owner if armed else None
@@ -1061,7 +1364,8 @@ def macos_control_click(root: str, data: dict) -> dict:
 # MIR-06: every host action the console performs for the app mirror lands in a bounded
 # in-memory ring and an append-only JSONL file under ios-lab/artifacts/. Rows carry a small
 # frame thumbnail at action time; nothing ever leaves this Mac.
-_MACOS_AUDIT_MAX = 500
+_MACOS_AUDIT_MAX = _MACOS_CONFIG["auditMax"]
+_MACOS_AUDIT_SEQ = 0  # monotonically increasing row number, for the live event feed
 _MACOS_AUDIT: list[dict] = []
 _MACOS_AUDIT_LOCK = threading.Lock()
 
@@ -1101,6 +1405,7 @@ def _macos_audit_thumbnail(window_id: int) -> str | None:
 def _macos_audit(root: str | None, kind: str, *, window: dict | None = None,
                  detail: dict | None = None, thumbnail: bool = False) -> None:
     """Record one audit row (MIR-06). Never raises: auditing must not break the action."""
+    global _MACOS_AUDIT_SEQ
     row: dict = {"time": time.time(), "kind": kind}
     if window:
         row.update({"app": window.get("app"), "windowId": window.get("windowId"),
@@ -1113,6 +1418,8 @@ def _macos_audit(root: str | None, kind: str, *, window: dict | None = None,
         except (OSError, ValueError):
             row["thumbnail"] = None
     with _MACOS_AUDIT_LOCK:
+        _MACOS_AUDIT_SEQ += 1
+        row["seq"] = _MACOS_AUDIT_SEQ
         _MACOS_AUDIT.append(row)
         del _MACOS_AUDIT[:-_MACOS_AUDIT_MAX]
     if root:
@@ -1137,6 +1444,143 @@ def macos_audit_download() -> bytes:
     with _MACOS_AUDIT_LOCK:
         payload = {"generatedAt": time.time(), "recording": True, "rows": list(_MACOS_AUDIT)}
     return json.dumps(payload).encode()
+
+
+# ── QcU parity: displays, capabilities, search, permissions, live events ─────
+# QcU is the mac-lab engine extracted as a standalone package; these are the engine-level
+# pieces it has that the console lacked. All read-only except the consent request.
+
+_MACOS_PANES = {
+    "accessibility": "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility",
+    "screen-recording": "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture",
+}
+
+
+def macos_displays() -> dict:
+    """Displays as JSON (MIR-03 data): origin, size and backing scale of every active display,
+    so a remote client can reason about coordinates without running doctor."""
+    if host_os() != "macos":
+        return {"available": False, "reason": "The app mirror needs a Mac.", "displays": []}
+    try:
+        return {"available": True, "reason": None, "displays": _macos_cg().screens()}
+    except OSError as e:
+        return {"available": False, "reason": f"CoreGraphics is unavailable: {e}", "displays": []}
+
+
+def macos_search_elements(root: str, window_id: int, query: str) -> dict:
+    """Find elements of one window by label, value or placeholder substring (max 50) so an
+    agent does not need the whole tree. Reads the same tree as the mirror, so paths and the
+    revision are valid for the element actions."""
+    if not isinstance(query, str) or not query.strip():
+        raise PlanError("query must be a non-empty string", code="INVALID_ARGS")
+    needle = query.strip().lower()[:120]
+    state = macos_window_elements(root, window_id)
+    hits = []
+    for element in state["elements"]:
+        haystack = " ".join(str(element.get(key) or "") for key in ("label", "title", "value", "placeholder")).lower()
+        if needle in haystack:
+            hits.append(element)
+            if len(hits) >= 50:
+                break
+    return {"windowId": state["windowId"], "app": state["app"], "revision": state["revision"],
+            "engine": state["engine"], "query": query.strip(), "count": len(hits), "hits": hits}
+
+
+def macos_responsible_app() -> str | None:
+    """The app that macOS will ask for permissions on behalf of: the nearest ancestor of this
+    process that lives in an .app bundle (Terminal, an IDE, the os-lab app). Doctor names it so
+    the user grants Accessibility to the right entry, not to "the helper"."""
+    if host_os() != "macos":
+        return None
+    pid = os.getppid()  # start above this process: a Python.app interpreter is not the grantee
+    for _ in range(12):
+        code, output = _capture(["ps", "-o", "ppid=,comm=", "-p", str(pid)], timeout=5)
+        line = output.strip()
+        if code != 0 or not line:
+            return None
+        parent, _, command = line.partition(" ")
+        marker = ".app/Contents/"
+        if marker in command:
+            return os.path.basename(command.split(marker, 1)[0].rstrip("/")) + ".app"
+        try:
+            pid = int(parent)
+        except ValueError:
+            return None
+        if pid <= 1:
+            return None
+    return None
+
+
+def macos_permissions(root: str) -> dict:
+    """Accessibility and Screen Recording state, and which app each grant belongs to."""
+    app = macos_responsible_app()
+    named = app or "the app that launched the console"
+    trusted: bool | None = None
+    if host_os() == "macos" and _ax_helper(root):
+        code, output = _capture([_ax_helper(root), "trusted"], timeout=10)
+        if code == 0 and output.strip().startswith("{"):
+            try:
+                trusted = bool(json.loads(output).get("trusted"))
+            except ValueError:
+                trusted = None
+    recording = macos_windows().get("screenRecording") if host_os() == "macos" else None
+    return {"accessibility": {"granted": trusted,
+                              "grantTo": named,
+                              "hint": None if trusted else f"Enable {named} in System Settings > Privacy & Security > Accessibility"},
+            "screenRecording": {"granted": recording,
+                                "grantTo": named,
+                                "hint": None if recording else f"Enable {named} in System Settings > Privacy & Security > Screen Recording"},
+            "responsibleApp": app}
+
+
+def macos_request_access(root: str, data: dict) -> dict:
+    """Ask macOS for a permission. Accessibility fires the consent dialog through the helper
+    when it is built; either pane can also be opened directly. Nothing else changes."""
+    if host_os() != "macos":
+        raise PlanError("The app mirror needs a Mac", code="UNSUPPORTED_PLATFORM")
+    pane = data.get("pane")
+    if pane not in _MACOS_PANES:
+        raise PlanError("pane must be accessibility or screen-recording", code="INVALID_ARGS")
+    prompted: bool | None = None
+    if pane == "accessibility" and _ax_helper(root):
+        code, output = _capture([_ax_helper(root), "request-access"], timeout=20)
+        if code == 0 and output.strip().startswith("{"):
+            try:
+                prompted = bool(json.loads(output).get("trusted"))
+            except ValueError:
+                prompted = None
+    code, output = _capture(["open", _MACOS_PANES[pane]], timeout=10)
+    _macos_audit(root, "permission-request", detail={"pane": pane, "opened": code == 0})
+    return {"ok": code == 0, "pane": pane, "trusted": prompted, "openedPane": code == 0,
+            "grantTo": macos_responsible_app()}
+
+
+def macos_capabilities(root: str) -> dict:
+    """What this console can do right now (capability handshake): engine, input kinds, keys,
+    safety layer and permissions in one read-only answer, so a client adapts instead of probing."""
+    on_mac = host_os() == "macos"
+    helper = bool(_ax_helper(root))
+    return {"platform": host_os(), "available": on_mac,
+            "engine": "ax-helper" if helper else ("osascript" if on_mac else None),
+            "helperBuilt": helper,
+            "canObserve": ["apps", "windows", "displays", "elements", "search", "diff", "screenshot",
+                           "stream", "menubar", "focused", "audit", "events"] if on_mac else [],
+            "canAct": {"click": on_mac, "input": list(_MACOS_INPUT_KINDS) if on_mac else [],
+                       "keys": list(_MACOS_INPUT_KEYS), "setValue": helper, "perform": helper,
+                       "deepInspect": on_mac},
+            "safety": {"controlTimeoutSec": _MACOS_CONTROL_TIMEOUT, "submitKinds": sorted(_MACOS_CONFIRM_KINDS),
+                       "singleOwner": True, "panicStop": True, "auditMax": _MACOS_AUDIT_MAX,
+                       "streamCapSec": _MACOS_STREAM_CAP,
+                       "allowlist": os.path.isfile(os.path.join(root, "ios-lab", "mac", "agent-apps.json"))},
+            "control": macos_control_state()}
+
+
+def macos_audit_since(seq: int) -> tuple[list[dict], int]:
+    """Audit rows newer than seq (thumbnails dropped) and the latest sequence number, for the
+    live event feed."""
+    with _MACOS_AUDIT_LOCK:
+        rows = [dict(r, thumbnail=None) for r in _MACOS_AUDIT if r.get("seq", 0) > seq]
+        return rows, _MACOS_AUDIT_SEQ
 
 
 # The mirror actions that run through the preview → confirm → job pipeline; the armed halves of
@@ -1265,7 +1709,7 @@ def macos_control_input(root: str, data: dict) -> dict:
 
 
 # MIR-04: the streaming mirror — one multipart MJPEG response instead of a poll per frame.
-_MACOS_STREAM_CAP = 600  # a stream never outlives ten minutes, so handlers cannot dangle
+_MACOS_STREAM_CAP = _MACOS_CONFIG["streamCap"]  # a stream never outlives this many seconds, so handlers cannot dangle
 
 
 def macos_window_stream(window_id: int, fps: float, epoch: int | None = None):
@@ -1573,6 +2017,8 @@ def provider_for(lab: str, os_name: str) -> str | None:
         return "native-rust" if os_name in ("linux", "macos", "windows") else None
     if lab == "macos":
         return "native-macos" if os_name == "macos" else None
+    if lab == "winapps":
+        return "native-windows" if os_name == "windows" else None
     if os_name == "macos":
         if lab == "ios":
             return "native-macos"
@@ -1607,6 +2053,8 @@ def lab_status(lab: str, host: dict) -> dict:
     if provider is None:
         if lab == "macos":
             reasons.append("macOS application automation needs a Mac.")
+        elif lab == "winapps":
+            reasons.append("The Windows Apps Lab needs a Windows host.")
         else:
             reasons.append("This lab needs a Linux/KVM host (or Windows with WSL2). Use a remote Linux machine.")
         return {"id": lab, "label": meta["label"], "summary": meta["summary"], "state": "unavailable",
@@ -1641,6 +2089,17 @@ def lab_status(lab: str, host: dict) -> dict:
                 notes.append("Appium automation needs Appium and its XCUITest driver; the simulator can run without them.")
             if not idb_ready:
                 notes.append("idb device automation needs the idb companion and client; the simulator can run without them.")
+    elif provider == "native-windows" and lab == "winapps":
+        # The Windows Apps Lab reads the current desktop directly; no VM/container runtime is involved.
+        installed = os.path.isfile(os.path.join(host["root"], "console", "winapps.py"))
+        if not installed:
+            state = "unavailable"
+            reasons.append("The Windows Apps Lab is not installed on this host.")
+        else:
+            state = "ready"
+        return {"id": lab, "label": meta["label"], "summary": meta["summary"], "state": state,
+                "provider": provider, "reasons": reasons, "requirements": reqs, "notes": notes,
+                "actions": [], "installed": installed}
     elif provider == "wsl2":
         distros = host["wsl"]["distributions"]
         reqs += [
@@ -1711,9 +2170,9 @@ def web_lab_status(host: dict) -> dict:
         engine = None
     binary = bool(engine and engine.get("binary"))
     reqs = [
-        _req("cargo", "Rust (Cargo)", tools.get("cargo"), hint="Install Rust via rustup (https://rustup.rs)"),
-        _req("make", "Make", tools.get("make")),
-        _req("bash", "Bash", tools.get("bash")),
+        _req("cargo", "Rust (Cargo)", tools.get("cargo"), required=not binary, hint="Install Rust via rustup (https://rustup.rs)"),
+        _req("make", "Make", tools.get("make"), required=not binary),
+        _req("bash", "Bash", tools.get("bash"), required=not binary),
     ]
     state = "ready"
     reasons: list[str] = []
@@ -2094,7 +2553,8 @@ def plan(root: str, request: dict, host: dict | None = None) -> dict:
                 "setup": ("appium.sh", "install"), "appium-install": ("appium.sh", "install"),
                 "appium-start": ("appium.sh", "start"), "appium-stop": ("appium.sh", "stop"),
                 "macos-smoke": ("macos-app.sh", "smoke"), "macos-click": ("macos-app.sh", "click"),
-                "macos-input": ("macos-app.sh", "input"), "macos-element": ("macos-app.sh", "element"),
+                "macos-input": ("macos-app.sh", "input"), "macos-scroll": ("macos-app.sh", "input"),
+                "macos-element": ("macos-app.sh", "element"),
                 "macos-set-value": ("macos-app.sh", "axset"), "macos-perform": ("macos-app.sh", "axperform"),
             }[action]
         else:
@@ -2110,6 +2570,10 @@ def plan(root: str, request: dict, host: dict | None = None) -> dict:
             picked = _validated_ios_device(root, device)
             selected = ["--device", picked["udid"]]
             effects.append(f"Boots the iOS Simulator device {picked['name']} ({picked['runtime']}) on this Mac.")
+        if action == "stop" and device not in (None, ""):
+            picked = _validated_ios_device(root, device)
+            selected = ["--device", picked["udid"]]
+            effects.append(f"Shuts down the iOS Simulator device {picked['name']} on this Mac. Other devices keep running.")
         if action == "macos-click":
             selected = [str(click["pid"]), str(click["x"]), str(click["y"])]
             effects.append(f"Brings the app (pid {click['pid']}) to the front and clicks once at "

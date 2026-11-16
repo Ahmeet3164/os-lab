@@ -62,6 +62,63 @@ frame, and read-only `/api/labs/ios/simulator` and
 `/api/labs/ios/screenshot` endpoints feed the panel's device list and live
 screen.
 
+The drawer also answers two questions the scripts never could. **Where is
+Xcode?** `xcode_status()` follows `xcode-select`/PATH (never an assumed
+install path) and now reports `developerDir` and the resolved `xcodeApp`, so a
+copy of Xcode installed on a non-system volume is shown at its real location
+(the drawer prints it; `doctor-mac.sh` prints the resolved
+`xcrun --find xcodebuild` path). **What real devices exist?** Read-only
+`GET /api/labs/ios/devices` (`ios_devices()` → `xcrun devicectl list devices
+--json-output`, `visibilityClass != "simulators"` filters the simulator rows
+out) lists paired or connected iPhones and iPads with their tunnel state.
+The iOS Actions card lists real devices and checks reachability automatically
+on each inventory refresh. A successful `devicectl info details` response alone
+does not prove reachability: a paired device is marked connected only when its
+current tunnel state is `connected`. The simulator panel docks beside the lab on desktop
+and overlays the page on phones and smaller tablets. Offline devices fade
+into the list with a small badge; the tunnel reason stays under Device details.
+The Actions card places connected phones and booted simulators in compact
+side-by-side card groups; selecting either opens its screen in the panel.
+The real-device control setup warning appears beside a device only when its
+check reports Developer Mode disabled; WDA signing is not probed by this check.
+The device picker accepts a real device: `GET /api/labs/ios/screenshot?udid=…`
+uses `xcrun devicectl device
+capture screenshot` to show its screen, while the simulator path still uses
+`simctl io <selected-udid> screenshot` through `?device=…`, so multiple booted
+simulators cannot show one another's screens. An offline selection shows a quiet status instead
+of repeatedly attempting capture. A connected device can still refuse capture
+if trust or permissions are missing; the frame shows that error and offers a
+retry. Capturing a screen is read-only. Driving the device still needs
+Developer Mode and a WebDriverAgent signed to the user's team for Appium.
+
+When the home volume is under disk pressure (`/api/cleanup/volumes` warning
+or below 20 GiB free) and the panel shows a booted simulator, it shows a nudge with the volume's free space
+linking to the Cleanup Lab's `/cleanup/relocation/` tab, where
+`simulators.coresimulator-devices` moves the CoreSimulator devices folder to
+another volume behind the CLN-27 symlink flow (see [[cleanup-lab]]; runtimes
+stay system-managed). The nudge is a read-only hint — it hides on fetch
+failure and never moves anything itself.
+
+The panel's Xcode path and resource meters are behind the Host details icon,
+closed by default. The low-disk nudge and any watchdog operation error stay
+visible outside those details.
+
+The drawer also watches resources so a heavy simulator cannot stall the Mac
+unnoticed: `GET /api/labs/ios/resources` (`ios_resources()`) samples host RAM
+via `vm_stat` (free + inactive + speculative count as available), CPU busy
+percent from `host_statistics64` tick deltas between polls (None on the first
+sample — honest, not zero), and what Simulator.app and its helpers cost from
+`ps`. Meters harden at warn (85/85) and critical (92/95); only when a simulator
+is booted and Simulator.app is running do two critical polls in a row open an
+alert dialog. Its one-click stops still ride the console's
+previewed plan → token flow — stop every simulator (`stop-simulator.sh`), or
+stop only the device selected in the drawer (the stop action takes the same
+`--device` argument start does). A per-session arm
+(`Stop simulators automatically…`) fires that stop without the dialog when
+the threshold holds; the dialog never shows while armed. Lab-page action and
+job cards stay compact by default — the command, effects and output collapse
+behind a header toggle and output opens by itself only when a job fails.
+
 The macOS Lab page mirrors real application windows instead. The window
 list comes from CoreGraphics through ctypes (the osascript ObjC bridge is
 unstable on current macOS), captures from `screencapture -l` (Screen
@@ -149,6 +206,28 @@ the computer-use runtimes share, with the guardrails intact:
   deliberately no arm tool — the human arms from the dashboard. `macos_task`
   runs a scripted sequence (max 25 steps) with one audit row per step for
   reproducible security reports.
+- **QcU parity** — engine pieces the standalone QcU package has:
+  `GET /api/labs/macos/{displays,capabilities,permissions,events}` and
+  `…/apps/<id>/search?q=` (also MCP `macos_search`, `macos_displays`,
+  `macos_capabilities`, `macos_permissions`); `events` is a live SSE audit
+  feed with a heartbeat that ends on disconnect, panic stop or the stream
+  cap. `POST …/permission/request` fires the Accessibility dialog or opens a
+  Privacy pane, and doctor names the app each grant belongs to. A second
+  owner arming gets `ARMED_BY_OTHER` with the holder named. Limits come from
+  env > `ios-lab/mac/mac-lab.json` > defaults, clamped. `OSLAB_AX_HELPER`
+  points at `ios-lab/mac/fake-ax-helper.py` so the act/verify paths run in
+  Linux CI; `make mac-setup` now builds the AX helper.
+- **Cleanup panel audit** — [[ios-lab/mac/cleanup-panel-verify.sh]]
+  (`make -C ios-lab mac-cleanup-verify`) reproduces the 2026-11-15 cleaner
+  audit against the running desktop app: it discovers the console port from
+  the spawned `web_ui.py` process, probes every `/api/cleanup/*` endpoint the
+  panel reads (flagging the Space Explorer 404 fixed in PR #248 instead of
+  failing), runs the default and full 64-entry measurement scans, and writes
+  a dated report under `ios-lab/artifacts/`. `BOOKMARK=1` applies the
+  quick-clean bookmark policy — low-risk entries of at least 50 MB, largest
+  first, capped at 8; high/medium-risk and privacy entries stay in the
+  plan → confirm flow. `RECORD=1` wraps the run in a `screencapture` video;
+  [[ios-lab/mac/README-cleanup-verify.md]] documents the manual runbook.
 
 ## Research
 

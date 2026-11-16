@@ -229,10 +229,28 @@ entry id and a destination volume from CLN-28's inventory (`GET
 `<volume>/oslab-caches/<entry id>`, the pair passes `safety.validate_copy`, the
 owning application must not be running, and there is no elevated fallback. An
 interrupted move is flagged in the status and continued by a typed resume that
-re-verifies the store copy before touching the aside. `POST
+re-verifies the store copy before touching the aside. A resume after a verified
+copy can continue before the rename; an existing aside path is never replaced.
+`POST
 /api/cleanup/relocation/plan` and `POST /api/cleanup/relocation/run` follow the
-typed preview → single-use job pattern and are audited. The `/cleanup/`
-relocation card is the dashboard layer's part.
+typed preview → single-use job pattern and are audited.
+
+The dashboard layer is the `/cleanup/relocation/` tab
+([[dashboard/src/views/cleanup/relocation-card.tsx]]): one row per relocatable
+entry with its path, a Local folder / Linked / Interrupted chip (the status
+payload reports relocatable and interrupted; link detail appears on the plan),
+a destination select fed by the volume inventory, and the plan preview behind
+the confirm dialog that names the entry, the destination and the symlink fact
+before anything moves. A run shows per-step progress with a Cancel that stops
+between steps; a completed move shows the store path, a failure says the
+original or a verified copy is still in place, and relocation results render
+as their own rows on the History tab. The overview's Relocation tile opens the
+tab. The first entry in the family is
+`simulators.coresimulator-devices`
+([[cleanup-lab/catalog/simulators.json]]): the CoreSimulator devices folder,
+`cleanable: false` (relocation-only — cleaning is refused), owning processes
+Simulator and Xcode, so an iOS Simulator setup can live outside the OS disk
+while simulator runtimes stay system-managed.
 
 ## Cleaner Pro (CLNP)
 
@@ -256,8 +274,15 @@ FDA; the user-folder grants; dot components → hidden roots); a recovered
 path makes no claim. Readiness gains the optional `permissions` capability,
 `labctl cleanup doctor` prints the probes, and
 `GET /api/cleanup/permissions` merges the probes with the latest scan's
-classification. The dashboard renders a Permissions card whose grant deep
-link is a plain client-side anchor — the engine never opens Settings.
+classification. The dashboard renders a Permissions card whose grant button
+posts `POST /api/cleanup/permissions/open-settings`: the page names a
+permission, and the console opens the engine's fixed panes with `open` —
+the modern privacy-extension pane first, the legacy pane as fallback. The
+old plain anchor is gone: the app webview swallows custom-scheme
+navigations, so clicking it never opened anything. The engine stays free of
+subprocesses; `settings_urls()` is the whole steerable surface, an unknown
+or non-macOS id opens nothing. The page also re-probes the records when the
+window regains focus, so a finished grant flips the chips without a reload.
 
 ### Background monitor (CLNP-09…13)
 
@@ -281,13 +306,20 @@ One typed bookmark per catalog entry — never a raw path — lives in
 [[cleanup-lab/engine/cleanup_lab/bookmarks.py]], with priority ordering, a
 quick-clean flag, a Trash-only `autoCleanHook` and a `sizeAlert` threshold.
 
+Loads that know the catalog drop rows naming entries it no longer lists and
+name them in `error` — one stale row used to 409 every add, update and
+remove with `Unknown catalog entry` for an entry the request never named.
+The healing load persists the healed store itself, so the drop notice is
+one-time; a bare load stays a fail-open read that writes nothing.
+
 `plan_entry_ids()` filters by flag in priority order and refuses the
 catalog's never-preselect risk classes with per-entry reasons. Quick clean
 (`POST /api/cleanup/bookmarks/quick-clean`) runs the existing plan →
 confirm → run flow. `run_hook_clean()` in the console executes the
 automated clean inside the monitor thread when a free-space crossing fires:
 engine-ready and no-overlap guards, Trash-only, audited with
-`automated: true`, announced by a post-run banner. The `bookmark-size`
+`automated: true`, announced by a post-run banner. The job reports `done`
+only after the bookmark's last-run timestamp has been saved. The `bookmark-size`
 trigger measures alerted bookmarks with a read-only entry-scoped scan and
 folds its events into the monitor store. `labctl cleanup bookmarks` lists
 them read-only.
@@ -315,16 +347,18 @@ behind it is [[cleanup-lab/engine/cleanup_lab/explorer.py]].
 is `null` and the dashboard omits the purgeable segment — purgeable is
 never guessed. The `/cleanup/` dashboard renders the overview: a readiness
 chip and last-scan note in the page head, the storage hero (segmented
-used/available bar), the Review-cleanup CTA and grouped capability card
-grids tied to live readiness. The five cleanup tabs plus the new
-`space` tab navigate in place (island-internal `pushState`/`popstate`
-router; static routes and Public Pages URLs unchanged; core data fetched
-once per session, per-tab data live).
+used/available bar), the Quick clean and Clean cards and, on the Settings
+tab, the grouped capability card grids tied to live readiness. The
+Dashboard, Settings and detail tabs (including the `space` tab) navigate
+in place (island-internal `pushState`/`popstate` router; static routes and
+Public Pages URLs unchanged; core data fetched once per session, per-tab
+data live).
 
 [[cleanup-lab/engine/cleanup_lab/explorer.py]] walks a parent-summed size
 tree read-only (lstat only, symlinks never followed, hard links counted
 once, one filesystem, node/depth budgets that report `truncated`) over
 registered roots only — `deep-roots.json` ids plus custom overlay entries.
+Entries are traversed by name so a hard link is attributed consistently.
 A drill-down walks a relative path that must stay inside the same root, so
 no request steers the walker. Console: `GET /api/cleanup/explorer/roots`
 and typed `explorer`/`explorer-subtree` jobs. The Space Explorer tab never
@@ -373,22 +407,41 @@ consumes it once on window focus with a 120-second max age, then drives
 `window.__oslabQuickClean`, which follows the dashboard's plan → confirm →
 run flow. `oslab://` deep links register through tauri-plugin-deep-link and
 land as whitelisted routes in `window.__oslabNavigate` (tab ids or overview
-section ids).
+section ids, each section id retargeting to the tab that hosts it:
+permissions, widgets and bookmarks live on Settings).
 
 ### Release embedding (CLW-08/09)
 
 `app/scripts/release-mac.sh` builds the widget products first, embeds them
 and rebuilds the app's seal.
 
-After the embed it re-signs appex → framework → app with the App Group
-entitlement and hardened runtime, regenerates and re-signs the updater
-tar.gz, re-notarizes the app, and verifies the nested code and entitlement.
-Pull-request dry runs compile the widget targets.
+After the embed it re-signs appex (with App Sandbox and App Group) →
+framework → app (with App Group) with hardened runtime, regenerates and re-signs
+the updater tar.gz, re-notarizes the app, and verifies the nested code and
+entitlements. Pull-request dry runs compile the widget targets. Build timings,
+entitlements checks, codesign verification, and test execution profiles are
+documented in [[docs/debug-widget-build.md]].
 
 ## Dashboard pages
 
-[[dashboard/src/views/cleanup/pages.tsx]] renders the dashboard at `/cleanup/`:
-scan, suggestions, plan review, confirmation, progress and a result summary.
+[[dashboard/src/views/cleanup/pages.tsx]] splits the dashboard at `/cleanup/`
+into a compact main view and a Settings tab.
+
+The main view keeps only the
+cleaning actions and the stats around them: the storage hero, the Quick clean
+card (one confirmed Trash run over the bookmarks flagged for quick clean,
+stating the reason when none are flagged), the Clean card (scan, the
+Recommended / More-safe presets, plan review, confirmation, progress) and the
+latest clean report, plus a compact read-only Monitor stats card
+([[dashboard/src/views/cleanup/monitor-card.tsx]] exports `MonitorStatsCard`;
+thresholds and volumes are configured in Settings). The Settings tab at
+`/cleanup/settings/` hosts the Bookmarks section, the Permissions card, the
+full Background monitor card, the Desktop widgets card and the capability
+card grid that links to the detail tools. The detail routes — Space Explorer,
+Advanced scan, Results, Leftovers, History, Relocation — keep their routes and
+behavior; the shared tab row renders on the Settings and detail pages, the
+local main page reaches Settings through the page-head action, and Public
+Pages keeps the full tab row without engine calls.
 
 Its confirmation opens the shared native dialog (focus containment,
 Escape/backdrop close, focus return) that lists ready items with sizes and
@@ -426,7 +479,8 @@ the seven translated locales.
 before the static dashboard fallthrough.
 
 `GET /api/cleanup/status`, `GET /api/cleanup/catalog` and `GET /api/cleanup/volumes` are read-only.
-The cleaner-pro layers add `GET /api/cleanup/permissions`, `GET /api/cleanup/monitor`
+The cleaner-pro layers add `GET /api/cleanup/permissions` plus the grant
+round-trip `POST /api/cleanup/permissions/open-settings`, `GET /api/cleanup/monitor`
 (with typed `monitor/config` and `monitor/evaluate` POSTs), the bookmark
 endpoints (`bookmarks`, `bookmarks/add|update|remove|quick-clean`), the
 custom-entry endpoints (`custom-entries`, `custom-entries/remove`) and the
