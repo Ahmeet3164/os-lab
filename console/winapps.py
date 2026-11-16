@@ -75,6 +75,8 @@ if sys.platform == "win32":
     _user32.GetWindowRect.restype = wintypes.BOOL
     _user32.GetWindowThreadProcessId.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.DWORD)]
     _user32.GetWindowThreadProcessId.restype = wintypes.DWORD
+    if not hasattr(_user32, "GetWindowLongPtrW"):  # 32-bit user32 exports only GetWindowLongW
+        _user32.GetWindowLongPtrW = _user32.GetWindowLongW
     _user32.GetWindowLongPtrW.argtypes = [wintypes.HWND, ctypes.c_int]
     _user32.GetWindowLongPtrW.restype = ctypes.c_ssize_t
     _user32.GetWindowTextLengthW.argtypes = [wintypes.HWND]
@@ -91,8 +93,9 @@ if sys.platform == "win32":
     _user32.ReleaseDC.restype = ctypes.c_int
     _user32.PrintWindow.argtypes = [wintypes.HWND, wintypes.HDC, wintypes.UINT]
     _user32.PrintWindow.restype = wintypes.BOOL
-    _user32.SetProcessDpiAwarenessContext.argtypes = [ctypes.c_void_p]
-    _user32.SetProcessDpiAwarenessContext.restype = wintypes.BOOL
+    if hasattr(_user32, "SetProcessDpiAwarenessContext"):  # Windows 10 1703+; older hosts use Shcore
+        _user32.SetProcessDpiAwarenessContext.argtypes = [ctypes.c_void_p]
+        _user32.SetProcessDpiAwarenessContext.restype = wintypes.BOOL
 
     _gdi32.CreateCompatibleDC.argtypes = [wintypes.HDC]
     _gdi32.CreateCompatibleDC.restype = wintypes.HDC
@@ -144,8 +147,8 @@ def _set_dpi_awareness() -> None:
     """Set per-monitor DPI awareness once, so coordinates stay physical pixels."""
     if sys.platform != "win32":
         return
-    if _user32 is not None and _user32.SetProcessDpiAwarenessContext(
-        DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2
+    if _user32 is not None and hasattr(_user32, "SetProcessDpiAwarenessContext") and (
+        _user32.SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2)
     ):
         return
     try:

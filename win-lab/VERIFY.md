@@ -46,6 +46,15 @@ converted pixels in a Python loop).
 This shows the PNG is well formed and non-blank for these windows. It does not
 prove capture of every window kind: see section 7.
 
+Resource and edge-case checks on the same host (`GetGuiResources` and
+`GetProcessHandleCount` before and after):
+
+- 280 captures, 300 inventories and 300 stale-id refusals left the process at
+  GDI objects 0 → 0 and handles 125 → 125, so no handle or GDI leak was observed.
+- Window ids `0`, `-5`, `4294967296`, a 23-digit number, an Arabic-Indic digit and
+  `1e3` were all refused with a `WinAppError`, never an unhandled exception.
+- `GetThreadDpiAwarenessContext` reports per-monitor-v2 awareness after import.
+
 ## 3. Real browser against the real backend
 
 `python android-lab/lab/web_ui.py 5077` was started and `/labs/winapps/` was
