@@ -28,6 +28,7 @@ async function mockApi(page: Page) {
       : path === "/api/health" ? { status: "ok" }
       : path === "/api/jobs" ? { jobs: [] }
       : path === "/api/content/status" || path === "/api/content/check" ? { installed: false, offline: true, updateAvailable: false }
+      : /^\/api\/labs\/[a-z]+\/monitor$/.test(path) ? { lab: path.split("/")[3], state: "stopped", containers: [] }
       : { logs: [] };
     await route.fulfill({ json: body });
   });
@@ -91,8 +92,11 @@ test("a direct link to a lab page re-focuses the sidebar and All labs restores t
 
 test("Spotlight keeps every lab listed while the sidebar focuses on one", async ({ page }) => {
   await page.goto("/labs/ios/");
+  // Wait for the shell to hydrate: an absent button is also true before the shortcut handler exists.
+  await expect(page.getByRole("button", { name: "Switch lab" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Android Lab" })).toHaveCount(0);
-  await page.keyboard.press("Meta+k");
+  // Open Spotlight by its button: the keyboard shortcut attaches separately and can race the first keypress.
+  await page.locator('button[aria-label="Open search"]').first().click();
   const spotlight = page.getByRole("dialog", { name: "Spotlight" });
   await expect(spotlight).toBeVisible();
   await spotlight.getByRole("combobox").fill("Android");
