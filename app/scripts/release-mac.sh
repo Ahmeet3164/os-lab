@@ -171,6 +171,10 @@ if [ -d "$APP_DIR/widget/build/OSLabWidgets.appex" ]; then
   codesign --force --options runtime --timestamp --entitlements "$WIDGET_ENTITLEMENTS" \
     --sign "$APPLE_SIGNING_IDENTITY" "$APP/Contents/PlugIns/OSLabWidgets.appex" \
     || die "signing the widget extension failed"
+  # Read the entitlements back right away: if they are already empty here the signing step lost them;
+  # if they only vanish later, the host re-sign or notarization step did. The verify step below says which.
+  say "widget extension entitlements straight after signing:"
+  codesign -d --entitlements - "$APP/Contents/PlugIns/OSLabWidgets.appex" 2>&1 | sed 's/^/    /' || true
   codesign --force --options runtime --timestamp \
     --sign "$APPLE_SIGNING_IDENTITY" "$APP/Contents/Frameworks/OSLabWidgetReloader.framework" \
     || die "signing the reloader framework failed"
@@ -178,6 +182,8 @@ if [ -d "$APP_DIR/widget/build/OSLabWidgets.appex" ]; then
   codesign --force --options runtime --timestamp --entitlements "$HOST_ENTITLEMENTS" \
     --sign "$APPLE_SIGNING_IDENTITY" "$APP" \
     || die "re-signing the app failed"
+  say "widget extension entitlements after the app re-sign:"
+  codesign -d --entitlements - "$APP/Contents/PlugIns/OSLabWidgets.appex" 2>&1 | sed 's/^/    /' || true
   # The updater bundle is built from the pre-embed app: rebuild it from the
   # re-signed app and re-sign it for the updater feed.
   say "rebuilding the updater bundle"

@@ -37,6 +37,7 @@ import {
 import { AppSidebar, SidebarBadge, useSidebarCollapsed, type SidebarGroup } from "./sidebar";
 import { Spotlight, type SpotlightCommand, type SpotlightMeta, type SpotlightRecord } from "./spotlight";
 import { toggleMode, useThemeMode } from "./theme";
+import { UpdateModal } from "../views/update-modal";
 import { androidLogsStore, healthStore, hostStore, jobsStore, type LabId, type LabStatus } from "../lib/api";
 import { copy, firewallPath, type FirewallLocale } from "../firewall/locale";
 import { localeFromPath, localePath } from "../i18n/paths";
@@ -437,6 +438,7 @@ export function AppShell({
           <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">{children}</div>
         </div>
       </div>
+      {PUBLIC_PAGES ? null : <UpdateModal />}
       <Spotlight
         onQueryChange={setSourceQuery}
         searchError={sourceSearchError && !PUBLIC_PAGES ? "Source search unavailable" : undefined}

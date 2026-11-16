@@ -2718,5 +2718,14 @@
   "The detailed cleanup tools, one click away.": "Ayrıntılı temizleme araçları, tek tık uzağınızda.",
   "Tools & advanced": "Araçlar ve gelişmiş",
   "bookmarks included": "yer imi dahil",
-  "measured in quick-clean bookmarks": "hızlı temizlik yer imlerinde ölçüldü"
+  "measured in quick-clean bookmarks": "hızlı temizlik yer imlerinde ölçüldü",
+  "Both come from signed releases; each download is verified before it is installed.": "İkisi de imzalı sürümlerden gelir; her indirme kurulmadan önce doğrulanır.",
+  "Content update": "İçerik güncellemesi",
+  "Downloading the update": "Güncelleme indiriliyor",
+  "Hooks are installed on this computer. They update only when you tick this box.": "Hook'lar bu bilgisayarda kurulu. Yalnızca bu kutuyu işaretlediğinizde güncellenirler.",
+  "Installing the content pack": "İçerik paketi kuruluyor",
+  "Later": "Daha sonra",
+  "Remind me later": "Daha sonra hatırlat",
+  "Updates available": "Güncellemeler var",
+  "Kept up to date automatically.": "Otomatik olarak güncel tutulur."
 }
