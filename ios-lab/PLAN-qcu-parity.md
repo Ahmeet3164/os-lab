@@ -81,7 +81,7 @@ dialog or opens the pane; not part of the preview pipeline), MCP `macos_search` 
 `ARMED_BY_OTHER`, `ios-lab/mac/mac-lab.json` (env > file > defaults, clamped),
 `OSLAB_AX_HELPER` + `ios-lab/mac/fake-ax-helper.py`, `make mac-setup` building
 the helper, and `android-lab/lab/tests/test_macos_parity.py` (13 tests, Linux-safe).
-Not done: dashboard UI for the new endpoints, and the Appium decision above.
+Dashboard: `dashboard/src/views/macos-engine-panel.tsx` (capabilities, permissions with Request access, displays, element search, live audit feed). Not done: the Appium decision above.
 Nothing here was exercised against a real input grant on a Mac.
 
 ## Caveats
