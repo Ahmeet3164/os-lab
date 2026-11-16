@@ -2759,5 +2759,10 @@
   "No engine": "لا يوجد محرك",
   "Stop feed": "إيقاف البث",
   "Start feed": "بدء البث",
-  "min": "د"
+  "min": "د",
+  "Switch lab": "تبديل المختبر",
+  "All labs": "جميع المختبرات",
+  "Task prompt": "موجّه المهمة",
+  "Focus the sidebar on one lab": "تركيز الشريط الجانبي على مختبر واحد",
+  "to switch": "للتبديل"
 }
