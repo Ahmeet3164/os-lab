@@ -43,7 +43,7 @@ export function globToRegExp(glob) {
 
 const matches = (patterns, file) => patterns.some((pattern) => globToRegExp(pattern).test(file));
 
-/** files: paths relative to the repository root; only dashboard/ files count. */
+/** files: paths relative to the repository root; outside dashboard/ only files a rule names count. */
 export function affected(files, map = loadMap(), specs = listSpecs()) {
   const result = { mode: "none", specs: new Set(), routes: new Set(), locales: new Set(), unmapped: [] };
   const expand = (pattern) => specs.filter((spec) => globToRegExp(pattern).test(spec));
@@ -52,8 +52,10 @@ export function affected(files, map = loadMap(), specs = listSpecs()) {
     map.smoke.routes.forEach((route) => result.routes.add(route));
   };
   for (const file of files) {
-    if (!file.startsWith("dashboard/")) continue;
-    const path = file.slice("dashboard/".length);
+    // Files outside dashboard/ count only when a rule names them ("../docs/legal/**").
+    const inside = file.startsWith("dashboard/");
+    const path = inside ? file.slice("dashboard/".length) : `../${file}`;
+    if (!inside && !map.rules.some((rule) => matches(rule.paths, path))) continue;
     if (matches(map.ignore, path)) continue;
     if (matches(map.full, path)) {
       result.mode = "full";

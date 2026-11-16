@@ -60,3 +60,9 @@ test("glob patterns", () => {
   assert.ok(!globToRegExp("src/views/*.tsx").test("src/views/a/b.tsx"));
   assert.ok(globToRegExp("src/pages/[locale]/**").test("src/pages/[locale]/firewall/x.astro"));
 });
+
+test("legal documents outside dashboard/ select the legal routes", () => {
+  const result = affected(["docs/legal/PRIVACY.md"]);
+  assert.equal(result.mode, "some");
+  assert.ok(result.routes.includes("/legal/privacy/"));
+});
