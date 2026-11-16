@@ -48,6 +48,7 @@ const PUBLIC_PAGES = import.meta.env.PUBLIC_SITE_MODE === "pages";
 export const LAB_ICON: Record<LabId, (size?: number) => ReactNode> = {
   android: (s = 16) => <AndroidLogoIcon size={s} />,
   windows: (s = 16) => <WindowsLogoIcon size={s} />,
+  winapps: (s = 16) => <TerminalWindowIcon size={s} />,
   linux: (s = 16) => <TerminalWindowIcon size={s} />,
   ios: (s = 16) => <AppleLogoIcon size={s} />,
   source: (s = 16) => <TerminalWindowIcon size={s} />,
@@ -178,6 +179,7 @@ function buildGroups(labs: LabStatus[] | undefined, running: Set<string>, androi
           ] },
         ...(labShown(labs, "ios", activeId) ? [labItem("ios", "iOS Lab")] : []),
         ...(labShown(labs, "windows", activeId) ? [labItem("windows", "Windows Lab")] : []),
+        ...(labShown(labs, "winapps", activeId) ? [labItem("winapps", "Windows Apps Lab")] : []),
         ...(labShown(labs, "macos", activeId) ? [labItem("macos", "macOS Lab")] : []),
         ...(labShown(labs, "linux", activeId) ? [labItem("linux", "Linux Lab")] : []),
         { id: "firewall", label: copy[locale].lab, icon: <FireIcon size={16} /> }
@@ -219,6 +221,7 @@ function buildMeta(): Record<string, SpotlightMeta> {
     "android-sitemap": { description: "Every page, endpoint and lab route", aliases: ["routes", "topology", "sitemap"] },
     "lab-ios": { description: "iOS Simulator via the macOS VM, or native Xcode", aliases: ["ios", "simulator", "xcode"] },
     "lab-windows": { description: "Windows VM with web desktop and RDP", aliases: ["windows", "rdp", "vm"] },
+    "lab-winapps": { description: "Read-only mirror of visible desktop applications on this Windows host", aliases: ["winapps", "windows apps", "window mirror", "capture"] },
     "lab-macos": { description: "Native Xcode Simulator and Appium on a Mac", aliases: ["mac", "appium", "xcuitest"] },
     "lab-linux": { description: "Linux VM with web console and SSH", aliases: ["linux", "ssh", "vm"] },
     "web-lab": { description: "Embedded in-app browser: open windows, inject JavaScript, read captured page activity", aliases: ["web", "browser", "webview", "injection", "javascript"] },

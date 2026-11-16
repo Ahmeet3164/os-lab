@@ -12,7 +12,8 @@ export default defineConfig({
     trace: "retain-on-failure"
   },
   webServer: {
-    command: `python3 -m http.server ${port} --bind 127.0.0.1 --directory dist`,
+    // Windows names the interpreter python; POSIX toolchains commonly provide python3.
+    command: `${process.platform === "win32" ? "python" : "python3"} -m http.server ${port} --bind 127.0.0.1 --directory dist`,
     url: `http://127.0.0.1:${port}/`,
     reuseExistingServer: !process.env.CI,
     timeout: 60_000

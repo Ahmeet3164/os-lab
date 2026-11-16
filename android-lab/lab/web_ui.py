@@ -57,6 +57,10 @@ try:
     import web_api  # noqa: E402  (console/web_api.py: Web Lab engine readiness and proxy)
 except ImportError:
     web_api = None
+try:
+    import winapps  # noqa: E402  (console/winapps.py: read-only native Windows app mirror)
+except ImportError:
+    winapps = None
 ARTIFACTS_DIR = os.path.join(SCRIPT_DIR, "artifacts")
 SCRIPTS_DIR = os.path.join(SCRIPT_DIR, "scripts")
 
@@ -447,6 +451,25 @@ class LabHttpHandler(BaseHTTPRequestHandler):
             self._json(200, oslab.macos_ax_focused(REPO_ROOT, {"pid": parts[4]}))
         elif len(parts) == 6 and parts[:4] == ["api", "labs", "macos", "session"] and parts[5] == "elements":
             self._json(200, oslab.macos_session_elements(REPO_ROOT, parts[4]))
+        elif len(parts) == 4 and parts[:2] == ["api", "labs"] and parts[2] == "winapps" and parts[3] == "apps":
+            # Native Windows app mirror is read-only and independent of the Windows VM lifecycle.
+            if winapps is None:
+                self._json(501, {"error": "The Windows app mirror module (console/winapps.py) is not installed"})
+                return
+            self._json(200, winapps.winapps_windows())
+        elif len(parts) == 4 and parts[:2] == ["api", "labs"] and parts[2] == "winapps" and parts[3] == "doctor":
+            if winapps is None:
+                self._json(501, {"error": "The Windows app mirror module (console/winapps.py) is not installed"})
+                return
+            self._json(200, winapps.doctor())
+        elif len(parts) == 6 and parts[:2] == ["api", "labs"] and parts[2] == "winapps" and parts[3] == "apps" and parts[5] == "screenshot":
+            if winapps is None:
+                self._json(501, {"error": "The Windows app mirror module (console/winapps.py) is not installed"})
+                return
+            try:
+                self._send_bytes(200, winapps.winapps_window_screenshot(parts[4]), "image/png", cache="no-store")
+            except winapps.WinAppError as exc:
+                self._json(400, {"error": str(exc)})
         elif path == "/api/jobs":
             self._json(200, {"jobs": JOBS.list()})
         elif len(parts) == 3 and parts[:2] == ["api", "jobs"]:
