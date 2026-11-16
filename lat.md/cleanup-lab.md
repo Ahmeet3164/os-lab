@@ -355,6 +355,7 @@ data live).
 tree read-only (lstat only, symlinks never followed, hard links counted
 once, one filesystem, node/depth budgets that report `truncated`) over
 registered roots only — `deep-roots.json` ids plus custom overlay entries.
+Entries are traversed by name so a hard link is attributed consistently.
 A drill-down walks a relative path that must stay inside the same root, so
 no request steers the walker. Console: `GET /api/cleanup/explorer/roots`
 and typed `explorer`/`explorer-subtree` jobs. The Space Explorer tab never
