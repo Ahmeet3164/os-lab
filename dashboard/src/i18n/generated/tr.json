@@ -2759,5 +2759,10 @@
   "No engine": "Motor yok",
   "Stop feed": "Akışı durdur",
   "Start feed": "Akışı başlat",
-  "min": "dk"
+  "min": "dk",
+  "Switch lab": "Laboratuvar değiştir",
+  "All labs": "Tüm laboratuvarlar",
+  "Task prompt": "Görev istemi",
+  "Focus the sidebar on one lab": "Kenar çubuğunu tek bir laboratuvara odakla",
+  "to switch": "değiştirmek için"
 }

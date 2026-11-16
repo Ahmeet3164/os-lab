@@ -2759,5 +2759,10 @@
   "No engine": "بدون موتور",
   "Stop feed": "توقف جریان",
   "Start feed": "شروع جریان",
-  "min": "دقیقه"
+  "min": "دقیقه",
+  "Switch lab": "تغییر آزمایشگاه",
+  "All labs": "همه آزمایشگاه‌ها",
+  "Task prompt": "پرامپت وظیفه",
+  "Focus the sidebar on one lab": "تمرکز نوار کناری روی یک آزمایشگاه",
+  "to switch": "برای تغییر"
 }

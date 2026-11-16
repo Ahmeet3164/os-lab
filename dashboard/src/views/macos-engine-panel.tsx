@@ -13,15 +13,17 @@ import { api, message, usePoll, type MacAuditRow, type MacElement, type MacPane,
 const MAX_EVENTS = 8;
 
 function PermissionRow({ label, permission, pane, onRequest, busy }: {
-  label: string; permission: MacPermission; pane: MacPane; onRequest: (pane: MacPane) => void; busy: boolean;
+  label: string; permission?: MacPermission; pane: MacPane; onRequest: (pane: MacPane) => void; busy: boolean;
 }) {
-  const state = permission.granted === true ? "Granted" : permission.granted === false ? "Not granted" : "Unknown";
+  // An older console may leave a permission out; show it as unknown instead of crashing the page.
+  const granted = permission?.granted;
+  const state = granted === true ? "Granted" : granted === false ? "Not granted" : "Unknown";
   return (
     <li className="flex flex-wrap items-center gap-2 text-sm">
       <span className="font-medium">{label}</span>
-      <Badge tone={permission.granted === true ? "success" : permission.granted === false ? "warning" : undefined}>{state}</Badge>
-      <span className="text-xs text-(--iux-muted-foreground)">{permission.grantTo}</span>
-      {permission.granted === true ? null : (
+      <Badge tone={granted === true ? "success" : granted === false ? "warning" : undefined}>{state}</Badge>
+      <span className="text-xs text-(--iux-muted-foreground)">{permission?.grantTo}</span>
+      {granted === true ? null : (
         <button type="button" className="iux-btn ml-auto" data-variant="outline" disabled={busy} onClick={() => onRequest(pane)}>
           Request access
         </button>
@@ -121,7 +123,7 @@ export function MacEnginePanel() {
         <ShieldCheckIcon size={15} className="text-[#f36c21]" aria-hidden />
         <span className="text-sm font-semibold">Engine</span>
         {info ? <Badge>{info.engine === "ax-helper" ? "Native AX helper" : info.engine === "osascript" ? "osascript fallback" : "No engine"}</Badge> : null}
-        {info?.control.armed ? <Badge tone="warning">Armed</Badge> : null}
+        {info?.control?.armed ? <Badge tone="warning">Armed</Badge> : null}
       </div>
 
       <div className="flex w-full flex-col gap-4 px-4">
@@ -131,7 +133,7 @@ export function MacEnginePanel() {
             The native AX helper is not built; element reads use the slower osascript path. Run make mac-setup to build it.
           </p>
         ) : null}
-        {info ? (
+        {info?.safety ? (
           <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-xs">
             <dt className="text-(--iux-muted-foreground)">Control timeout</dt>
             <dd>{Math.round(info.safety.controlTimeoutSec / 60)} min</dd>
@@ -158,7 +160,7 @@ export function MacEnginePanel() {
 
         <div className="flex flex-col gap-2">
           <h3 className="text-xs font-semibold uppercase tracking-wide text-(--iux-muted-foreground)">Displays</h3>
-          {displays.data && displays.data.displays.length ? (
+          {displays.data?.displays?.length ? (
             <ul className="flex flex-col gap-1 text-sm">
               {displays.data.displays.map((d, i) => (
                 <li key={`${d.x}-${d.y}-${i}`}>{`${d.width}×${d.height} pt · ${d.x},${d.y} · ${d.scale}×`}</li>

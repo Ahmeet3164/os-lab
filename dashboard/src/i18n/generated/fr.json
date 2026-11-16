@@ -2759,5 +2759,10 @@
   "No engine": "Aucun moteur",
   "Stop feed": "Arrêter le flux",
   "Start feed": "Démarrer le flux",
-  "min": "min"
+  "min": "min",
+  "Switch lab": "Changer de laboratoire",
+  "All labs": "Tous les laboratoires",
+  "Task prompt": "Invite de tâche",
+  "Focus the sidebar on one lab": "Concentrer la barre latérale sur un seul laboratoire",
+  "to switch": "pour changer"
 }

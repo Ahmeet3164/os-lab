@@ -9,7 +9,13 @@ A static Astro app in [[dashboard]] served by the Python console; there is no
 Node server at runtime.
 
 [[dashboard/src/shell/app-shell.tsx]] carries the sidebar (labs with their
-availability pills), Spotlight and theme ported from qLar. Pages are React
+availability pills), Spotlight and theme ported from qLar.
+[[dashboard/src/shell/lab-switcher.tsx]] is the ⌘L / Ctrl+L modal that sets the
+focused lab: a compact card per lab with its live availability, remembered in
+[[dashboard/src/shell/active-lab.ts]]. With a focus, the sidebar's OS Lab group
+keeps only that lab's entry (plus the firewall section); "All labs" in the
+switcher restores the full list, and Spotlight keeps every lab listed.
+Pages are React
 islands: [[dashboard/src/views/host-page.tsx]],
 [[dashboard/src/views/lab-page.tsx]], [[dashboard/src/views/jobs-page.tsx]],
 [[dashboard/src/views/contribute-page.tsx]] and

@@ -2759,5 +2759,10 @@
   "No engine": "Keine Engine",
   "Stop feed": "Feed stoppen",
   "Start feed": "Feed starten",
-  "min": "Min."
+  "min": "Min.",
+  "Switch lab": "Labor wechseln",
+  "All labs": "Alle Labore",
+  "Task prompt": "Aufgaben-Prompt",
+  "Focus the sidebar on one lab": "Seitenleiste auf ein einzelnes Labor fokussieren",
+  "to switch": "zum Wechseln"
 }
