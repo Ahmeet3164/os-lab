@@ -2718,5 +2718,14 @@
   "The detailed cleanup tools, one click away.": "أدوات التنظيف التفصيلية، على بعد نقرة واحدة.",
   "Tools & advanced": "الأدوات والمتقدم",
   "bookmarks included": "علامة مضمَّنة",
-  "measured in quick-clean bookmarks": "مقاس في علامات التنظيف السريع"
+  "measured in quick-clean bookmarks": "مقاس في علامات التنظيف السريع",
+  "Both come from signed releases; each download is verified before it is installed.": "كلاهما من إصدارات موقّعة؛ يُتحقَّق من كل تنزيل قبل تثبيته.",
+  "Content update": "تحديث المحتوى",
+  "Downloading the update": "جارٍ تنزيل التحديث",
+  "Hooks are installed on this computer. They update only when you tick this box.": "الـ hooks مثبّتة على هذا الكمبيوتر. لا تُحدَّث إلا عند تحديد هذا المربع.",
+  "Installing the content pack": "جارٍ تثبيت حزمة المحتوى",
+  "Later": "لاحقًا",
+  "Remind me later": "ذكّرني لاحقًا",
+  "Updates available": "تحديثات متاحة",
+  "Kept up to date automatically.": "يُحدَّث تلقائيًا."
 }

@@ -2718,5 +2718,14 @@
   "The detailed cleanup tools, one click away.": "ابزارهای دقیق پاک‌سازی، فقط یک کلیک فاصله دارد.",
   "Tools & advanced": "ابزارها و پیشرفته",
   "bookmarks included": "نشانی شامل شده",
-  "measured in quick-clean bookmarks": "در نشانی‌های پاک‌سازی سریع اندازه‌گیری شد"
+  "measured in quick-clean bookmarks": "در نشانی‌های پاک‌سازی سریع اندازه‌گیری شد",
+  "Both come from signed releases; each download is verified before it is installed.": "هر دو از نسخه‌های امضاشده می‌آیند؛ هر دانلود پیش از نصب بررسی می‌شود.",
+  "Content update": "به‌روزرسانی محتوا",
+  "Downloading the update": "در حال دریافت به‌روزرسانی",
+  "Hooks are installed on this computer. They update only when you tick this box.": "هوک‌ها روی این رایانه نصب شده‌اند. فقط با علامت زدن این کادر به‌روزرسانی می‌شوند.",
+  "Installing the content pack": "در حال نصب بستهٔ محتوا",
+  "Later": "بعداً",
+  "Remind me later": "بعداً یادآوری کن",
+  "Updates available": "به‌روزرسانی‌ها موجودند",
+  "Kept up to date automatically.": "به‌صورت خودکار به‌روز نگه داشته می‌شود."
 }

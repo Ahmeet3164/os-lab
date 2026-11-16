@@ -2718,5 +2718,14 @@
   "The detailed cleanup tools, one click away.": "Las herramientas de limpieza detalladas, a un clic.",
   "Tools & advanced": "Herramientas y avanzado",
   "bookmarks included": "marcadores incluidos",
-  "measured in quick-clean bookmarks": "medido en marcadores de limpieza rápida"
+  "measured in quick-clean bookmarks": "medido en marcadores de limpieza rápida",
+  "Both come from signed releases; each download is verified before it is installed.": "Ambas provienen de versiones firmadas; cada descarga se verifica antes de instalarse.",
+  "Content update": "Actualización de contenido",
+  "Downloading the update": "Descargando la actualización",
+  "Hooks are installed on this computer. They update only when you tick this box.": "Los hooks están instalados en este equipo. Solo se actualizan si marcas esta casilla.",
+  "Installing the content pack": "Instalando el paquete de contenido",
+  "Later": "Más tarde",
+  "Remind me later": "Recordármelo más tarde",
+  "Updates available": "Actualizaciones disponibles",
+  "Kept up to date automatically.": "Se mantiene actualizado automáticamente."
 }
