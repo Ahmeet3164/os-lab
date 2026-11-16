@@ -122,6 +122,18 @@ branch hit the same conflicts when it rebased at the end.
 - [ ] `CONTRIBUTING.md`: the landing steps and conflict rules for human contributors.
 - [ ] This plan: tick items off and link the PRs; close it when Phase 3 lands.
 
+## Phase 4: open the task system to every contributor
+
+The course midterm is ending, so roadmap tasks are now for anyone, not only enrolled
+students. Agents and outside contributors share the same reservation flow, so it must
+not depend on the course calendar. Do this after Phase 3, in its own PR.
+
+- [ ] **Stale reservations.** A reservation with no linked PR and no update for 21 days becomes available again. The dashboard shows it as **Available (expired)**, and a scheduled check lists the expired ones for the maintainer. Existing midterm reservations get a notice before they expire.
+- [ ] **Template and schema.** In `reservations/README.md` and `_schema.json`, drop "student no" from the template; keep `course` optional for course work.
+- [ ] **`CONTRIBUTING.md`.** Lead with the general flow (pick a task, reserve it, land it with the Phase 1 steps). Move the course rules (midterm options, `vize-projesi.md`, MYO063 bonus limits) into one clearly marked "Course work" section.
+- [ ] **Contribute page.** Write task text for any contributor ("you" or "the contributor", not "students"). Replace the enrollment-based sizing note, and offer course filtering only as an option.
+- [ ] **Agents.** Agents follow the same reservation rules as people: reserve before starting a task ID, and never take an ID that another branch or an open reservation already uses.
+
 ## Acceptance checks
 
 - [ ] Two `scripts/e2e.sh` runs started together: the second waits for the lock, and both pass.
@@ -135,6 +147,7 @@ branch hit the same conflicts when it rebased at the end.
 - [ ] Two worktrees made with `scripts/worktree.sh new` share one `node_modules`, one Playwright browser folder and one virtualenv, and the second one is ready without downloading anything.
 - [ ] A branch that changes `package-lock.json` gets its own `node_modules` after `scripts/worktree.sh doctor`, and the other worktrees keep working.
 - [ ] Two worktrees build the dashboard at the same time without touching each other's Vite cache or `dist`.
+- [ ] A reservation older than 21 days with no PR shows as available on the Contribute page.
 - [ ] With `OSLAB_CACHE_ROOT` set to an external volume, nothing new is written under `~/.cache`, `~/.npm` or `~/Library/Caches` by the os-lab scripts.
 - [ ] `npm run check`, `npm run test:i18n`, `npm run build` and `lat check` pass.
 
