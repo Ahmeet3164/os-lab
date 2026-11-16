@@ -1492,7 +1492,7 @@ def macos_responsible_app() -> str | None:
     the user grants Accessibility to the right entry, not to "the helper"."""
     if host_os() != "macos":
         return None
-    pid = os.getpid()
+    pid = os.getppid()  # start above this process: a Python.app interpreter is not the grantee
     for _ in range(12):
         code, output = _capture(["ps", "-o", "ppid=,comm=", "-p", str(pid)], timeout=5)
         line = output.strip()

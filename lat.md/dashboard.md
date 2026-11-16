@@ -57,6 +57,18 @@ endpoints. `console/mcp_server.py` exposes the same guarded surface as a
 stdio MCP server — the model acts, the console guards, every step is
 audited. See [[ios-lab]] for permissions.
 
+
+## macOS engine panel
+
+[[dashboard/src/views/macos-engine-panel.tsx]] sits under the mirror and shows
+engine state, permissions, displays, element search and a live audit feed.
+
+It reads `/api/labs/macos/{capabilities,permissions,displays}` and searches
+one window through `…/apps/<id>/search`. The only write is Request access
+(`POST …/permission/request`), which fires the Accessibility dialog or opens
+a Privacy pane. The feed is an opt-in `EventSource` on `…/events` that closes
+when switched off, hidden or unmounted.
+
 ## Windows Apps Lab panel
 
 On Windows hosts, the new `winapps` lab serves a read-only desktop mirror through
