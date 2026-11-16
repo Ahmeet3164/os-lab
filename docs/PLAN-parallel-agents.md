@@ -22,6 +22,7 @@ branch hit the same conflicts when it rebased at the end.
 - [ ] Only one agent lands work on master at a time, in the order the user chooses.
 - [ ] During development, run single e2e specs only, on your own port with two workers: `OSLAB_E2E_PORT=<free 43xx> npx playwright test --workers=2 <spec>`.
 - [ ] Run the full e2e suite once per branch, right before the PR, and only while no other agent is running it.
+- [ ] Before any `scripts/e2e.sh` run, ask the user which mode to use. Suggest one that fits the change, show the `--dry-run` output (specs, locales, widths, workers, screenshots), and limit the run to the patched parts unless the user asks for more.
 - [ ] Never `pkill` or `killall` by name. Only kill PIDs you started.
 - [ ] Do not commit `dashboard/dist` until the last landing step.
 - [ ] Rebase on `origin/master` at the start of each work phase, not only at the end.
@@ -56,11 +57,42 @@ branch hit the same conflicts when it rebased at the end.
 ## Phase 2: fix the tooling (one PR, after Phase 1)
 
 - [ ] **A. Playwright isolation.** In `dashboard/playwright.config.ts`, read `workers` from `OSLAB_E2E_WORKERS` (default 2), and turn on `reuseExistingServer` only when `OSLAB_E2E_REUSE=1`, so a run never uses another worktree's server.
-- [ ] **B. `scripts/e2e.sh`.** Pick a free port, take a machine-wide lock so only one full suite runs at a time, then run Playwright with that port and two workers. Pass arguments through so single specs work. macOS has no `flock`, so use a `mkdir` lock with a wait loop that records the PID and clears stale locks. Must work on macOS and Linux and pass `bash -n`.
+- [ ] **B. `scripts/e2e.sh`, with every feature switchable from arguments.** It picks a free port, takes a machine-wide lock so only one heavy run happens at a time, and runs Playwright. macOS has no `flock`, so it uses a `mkdir` lock with a wait loop that records the PID and clears stale locks. It must work on macOS and Linux and pass `bash -n`.
+
+  | Argument | Default | What it does |
+  |---|---|---|
+  | `--changed[=<base>]` | on when no spec is given | Run only the specs that cover files changed since `<base>` (default `origin/master`), using the map in item G |
+  | `<spec>…`, `--grep <text>` | none | Run these specs or matching tests only |
+  | `--full` | off | The whole suite; only before a PR |
+  | `--workers <n>` | 2 | Parallel browsers |
+  | `--port <n>` | a free port | Fixed port, for debugging |
+  | `--lock` / `--no-lock` | lock on | `--no-lock` only for single specs, never with `--full` or `--crawl` |
+  | `--screenshots=off\|on-failure\|on` | `on-failure` | Screenshot capture |
+  | `--trace=off\|on-failure\|on` | `on-failure` | Playwright trace |
+  | `--video=off\|on-failure` | `off` | Video; expensive, use only for one failing spec |
+  | `--crawl` | off | Full-page PNG of each route (item F) |
+  | `--routes <list>` | changed routes | Crawl only these routes |
+  | `--locales <list>\|all` | `en` | Locales to crawl or test |
+  | `--widths desktop,phone` | `desktop` | Viewports to crawl |
+  | `--out <dir>` | `dashboard/test-results/<run-id>/` | Where screenshots, traces and the report go |
+  | `--build` / `--no-build` | build when `dist` is older than `src` | Rebuild `dist` first |
+  | `--dry-run` | off | Print the plan (specs, routes, locales, widths, workers, capture) and exit |
+  | `--help` | | Arguments and examples |
+
+  Each argument also has an `OSLAB_E2E_*` environment variable, read by `playwright.config.ts`, so a plain `npx playwright test` follows the same defaults.
 - [ ] **C. Locale conflicts.** Stop every feature from appending keys to the end of the same files. Preferred: one dictionary file per feature, merged at build time, with `scripts/check-translations.mjs` updated to match. Smaller option: sort the keys in every locale file once and enforce the order in `test:i18n`. The PR explains the choice.
 - [ ] **D. `dist` in reviews.** Mark `dashboard/dist/**` as `linguist-generated -diff` in `.gitattributes` so it stays out of review diffs. Optional for later: build `dist` in CI or at release time and stop committing it.
 - [ ] **E. Shared registries (optional).** Move per-lab nav and Spotlight entries out of `app-shell.tsx` into one small file per lab, so new labs stop conflicting there.
-- [ ] **F. Screenshots from e2e runs.** `scripts/e2e.sh --screenshots` sets `OSLAB_E2E_SCREENSHOTS`, which `playwright.config.ts` maps to `use.screenshot` (`only-on-failure` by default, `on` for every test). Failed tests keep their trace (DOM snapshots and screenshots, already `retain-on-failure`). `scripts/e2e.sh --crawl` runs a crawl spec that visits every local route in all eight locales at desktop and phone widths and saves a full-page PNG per route, plus an HTML report to review layout changes. Output goes under `dashboard/test-results/<run-id>/`, which stays git-ignored. Videos stay off because they cost too much CPU.
+- [ ] **F. Screenshots and crawl.** `--screenshots` and `--trace` map to Playwright's `use.screenshot` and `use.trace`. `--crawl` runs a crawl spec that visits the selected routes in the selected locales and widths, saves one full-page PNG each, and writes an HTML report to review layout changes. By default it crawls only the routes the change touches, in English at desktop width. `--locales all --widths desktop,phone` is the full set (about 30 routes × 8 locales × 2 widths, about 500 images), which runs only with the lock. Output stays git-ignored.
+- [ ] **G. Change-to-test map.** `dashboard/e2e/affected.json` maps source paths to the specs and routes that cover them. Examples: `src/views/cleanup/**` → `cleanup*.spec.ts` and `/cleanup/`; `src/views/feedback-page.tsx` and `src/views/settings-page.tsx` → `feedback-settings.spec.ts` and `/feedback/`, `/settings/`; `src/i18n/generated/**` → the routes that use the changed keys, in the changed locales. Shared files (`src/shell/**`, `src/components/ui.tsx`, `src/styles/**`, `astro.config.mjs`) map to a smoke subset (the hydration test plus one spec per area), not the whole suite. A test checks that every spec appears in the map, so new specs cannot be left out.
+- [ ] **H. Asking before a run.** `AGENTS.md` tells agents to ask before any `scripts/e2e.sh` run and to suggest a mode, for example:
+  - a change in one view: `scripts/e2e.sh --changed` (its specs only);
+  - a layout or style change: `--changed --crawl --widths desktop,phone`;
+  - new or changed translations: `--changed --crawl --locales <changed locales>`;
+  - shared shell or styling: the smoke subset plus `--crawl` of the main routes;
+  - right before the PR: `--full`, once, with the lock.
+
+  The agent shows the `--dry-run` output with its question, so the user sees what will run and roughly how long it takes.
 
 ## Phase 3: documentation (same PR as Phase 2)
 
@@ -76,6 +108,9 @@ branch hit the same conflicts when it rebased at the end.
 - [ ] A full suite run with two workers keeps the load average below the number of CPU cores.
 - [ ] A test branch that adds locale keys rebases onto a master that also added keys, without a locale conflict.
 - [ ] `scripts/e2e.sh --screenshots e2e/<spec>` and `scripts/e2e.sh --crawl` save PNGs under the run folder, and a failed test keeps its screenshot and trace.
+- [ ] `scripts/e2e.sh --changed --dry-run` on a branch that only touches `src/views/cleanup/` lists only the cleanup specs and `/cleanup/` routes.
+- [ ] Every argument in item B can be switched on and off, and `--help` lists them all with their defaults.
+- [ ] `--no-lock` together with `--full` or `--crawl` is refused.
 - [ ] `npm run check`, `npm run test:i18n`, `npm run build` and `lat check` pass.
 
 ## Appendix: session reports from 2026-11-16
