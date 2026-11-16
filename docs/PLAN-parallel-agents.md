@@ -61,8 +61,8 @@ branch hit the same conflicts when it rebased at the end.
 
 ## Phase 2: fix the tooling (one PR, after Phase 1)
 
-- [ ] **A. Playwright isolation.** In `dashboard/playwright.config.ts`, read `workers` from `OSLAB_E2E_WORKERS` (default 2), and turn on `reuseExistingServer` only when `OSLAB_E2E_REUSE=1`, so a run never uses another worktree's server.
-- [ ] **B. `scripts/e2e.sh`, with every feature switchable from arguments.** It picks a free port, takes a machine-wide lock so only one heavy run happens at a time, and runs Playwright. macOS has no `flock`, so it uses a `mkdir` lock with a wait loop that records the PID and clears stale locks. It must work on macOS and Linux and pass `bash -n`.
+- [x] **A. Playwright isolation.** In `dashboard/playwright.config.ts`, read `workers` from `OSLAB_E2E_WORKERS` (default 2), and turn on `reuseExistingServer` only when `OSLAB_E2E_REUSE=1`, so a run never uses another worktree's server.
+- [x] **B. `scripts/e2e.sh`, with every feature switchable from arguments.** It picks a free port, takes a machine-wide lock so only one heavy run happens at a time, and runs Playwright. macOS has no `flock`, so it uses a `mkdir` lock with a wait loop that records the PID and clears stale locks. It must work on macOS and Linux and pass `bash -n`.
 
   | Argument | Default | What it does |
   |---|---|---|
@@ -85,8 +85,8 @@ branch hit the same conflicts when it rebased at the end.
   | `--help` | | Arguments and examples |
 
   Each argument also has an `OSLAB_E2E_*` environment variable, read by `playwright.config.ts`, so a plain `npx playwright test` follows the same defaults.
-- [ ] **C. Locale conflicts.** Stop every feature from appending keys to the end of the same files. Preferred: one dictionary file per feature, merged at build time, with `scripts/check-translations.mjs` updated to match. Smaller option: sort the keys in every locale file once and enforce the order in `test:i18n`. The PR explains the choice.
-- [ ] **D. Build `dist` on merge, not in feature commits.** `dist` stays committed on master, because `./labctl ui` serves it on hosts without Node. Feature branches stop building it:
+- [x] **C. Locale conflicts.** Stop every feature from appending keys to the end of the same files. Preferred: one dictionary file per feature, merged at build time, with `scripts/check-translations.mjs` updated to match. Smaller option: sort the keys in every locale file once and enforce the order in `test:i18n`. The PR explains the choice.
+- [x] **D. Build `dist` on merge, not in feature commits.** `dist` stays committed on master, because `./labctl ui` serves it on hosts without Node. Feature branches stop building it:
   - A check in `dashboard-e2e.yml` fails a PR that changes `dashboard/dist/**`. CI already builds `dist` itself before the tests, so PRs are tested the same way.
   - A new `dashboard-dist.yml` runs on push to master when `dashboard/**` changes: `npm ci`, `npm run build`, and when `dist` differs, a `build: regenerate dashboard dist` change. It uses a `concurrency` group without cancelling, so when two PRs merge close together the second run rebuilds from the latest master.
   - Master's branch protection requires a PR and applies to admins, so the workflow cannot push directly. It opens a `build/dist-<sha>` PR and enables auto-merge, or the maintainer adds a ruleset bypass for the workflow's app. The PR route needs no permission change.
@@ -95,9 +95,9 @@ branch hit the same conflicts when it rebased at the end.
   - Mark `dashboard/dist/**` as `linguist-generated -diff` in `.gitattributes`.
   - Accepted cost: for a few minutes after each merge, master's `dist` is one merge behind its source.
 - [ ] **E. Shared registries (optional).** Move per-lab nav and Spotlight entries out of `app-shell.tsx` into one small file per lab, so new labs stop conflicting there.
-- [ ] **F. Screenshots and crawl.** `--screenshots` and `--trace` map to Playwright's `use.screenshot` and `use.trace`. `--crawl` runs a crawl spec that visits the selected routes in the selected locales and widths, saves one full-page PNG each, and writes an HTML report to review layout changes. By default it crawls only the routes the change touches, in English at desktop width. `--locales all --widths desktop,phone` is the full set (about 30 routes × 8 locales × 2 widths, about 500 images), which runs only with the lock. Output stays git-ignored.
-- [ ] **G. Change-to-test map.** `dashboard/e2e/affected.json` maps source paths to the specs and routes that cover them. Examples: `src/views/cleanup/**` → `cleanup*.spec.ts` and `/cleanup/`; `src/views/feedback-page.tsx` and `src/views/settings-page.tsx` → `feedback-settings.spec.ts` and `/feedback/`, `/settings/`; `src/i18n/generated/**` → the routes that use the changed keys, in the changed locales. Shared files (`src/shell/**`, `src/components/ui.tsx`, `src/styles/**`, `astro.config.mjs`) map to a smoke subset (the hydration test plus one spec per area), not the whole suite. A test checks that every spec appears in the map, so new specs cannot be left out.
-- [ ] **H. Asking before a run.** `AGENTS.md` tells agents to ask before any `scripts/e2e.sh` run and to suggest a mode, for example:
+- [x] **F. Screenshots and crawl.** `--screenshots` and `--trace` map to Playwright's `use.screenshot` and `use.trace`. `--crawl` runs a crawl spec that visits the selected routes in the selected locales and widths, saves one full-page PNG each, and writes an HTML report to review layout changes. By default it crawls only the routes the change touches, in English at desktop width. `--locales all --widths desktop,phone` is the full set (about 30 routes × 8 locales × 2 widths, about 500 images), which runs only with the lock. Output stays git-ignored.
+- [x] **G. Change-to-test map.** `dashboard/e2e/affected.json` maps source paths to the specs and routes that cover them. Examples: `src/views/cleanup/**` → `cleanup*.spec.ts` and `/cleanup/`; `src/views/feedback-page.tsx` and `src/views/settings-page.tsx` → `feedback-settings.spec.ts` and `/feedback/`, `/settings/`; `src/i18n/generated/**` → the routes that use the changed keys, in the changed locales. Shared files (`src/shell/**`, `src/components/ui.tsx`, `src/styles/**`, `astro.config.mjs`) map to a smoke subset (the hydration test plus one spec per area), not the whole suite. A test checks that every spec appears in the map, so new specs cannot be left out.
+- [x] **H. Asking before a run.** `AGENTS.md` tells agents to ask before any `scripts/e2e.sh` run and to suggest a mode, for example:
   - a change in one view: `scripts/e2e.sh --changed` (its specs only);
   - a layout or style change: `--changed --crawl --widths desktop,phone`;
   - new or changed translations: `--changed --crawl --locales <changed locales>`;
@@ -106,7 +106,7 @@ branch hit the same conflicts when it rebased at the end.
 
   The agent shows the `--dry-run` output with its question, so the user sees what will run and roughly how long it takes.
 
-- [ ] **I. Shared caches for parallel worktrees.** Every worktree reuses one copy of each dependency and download cache, which saves disk space and makes installs and builds faster. Cache root: `OSLAB_CACHE_ROOT` (default `~/.cache/os-lab`; on the Mac, set it to the external volume, for example `/Volumes/Projects/iQ/.cache-build`, so nothing lands on the system disk).
+- [x] **I. Shared caches for parallel worktrees.** Every worktree reuses one copy of each dependency and download cache, which saves disk space and makes installs and builds faster. Cache root: `OSLAB_CACHE_ROOT` (default `~/.cache/os-lab`; on the Mac, set it to the external volume, for example `/Volumes/Projects/iQ/.cache-build`, so nothing lands on the system disk).
 
   | Cache | How it is shared | Why this way |
   |---|---|---|
@@ -118,7 +118,7 @@ branch hit the same conflicts when it rebased at the end.
   | Cargo (desktop app) | Shared `CARGO_HOME` registry, plus `sccache` (`RUSTC_WRAPPER=sccache`, `SCCACHE_DIR=$OSLAB_CACHE_ROOT/sccache`); `target/` stays per worktree | A shared `target/` makes builds wait on Cargo's lock and rebuild when branches differ; `sccache` shares compiled crates without that |
 
   Never shared: `dashboard/dist`, `build-pages/`, `test-results/`, `.astro/`, lab `.env` files, `storage/`, `artifacts/`, and any `target/` folder. Those are per-branch output or local secrets.
-- [ ] **J. `scripts/worktree.sh`.** One script for creating and removing worktrees with the caches wired in, so agents do not hand-make symlinks:
+- [x] **J. `scripts/worktree.sh`.** One script for creating and removing worktrees with the caches wired in, so agents do not hand-make symlinks:
   - `new <branch>`: fetch, create the worktree from `origin/master`, link `node_modules` and `.venv-test` from the cache (installing into the cache only if that lockfile or requirements hash is new), set the cache variables, and print the worktree path and its e2e port.
   - `doctor`: check that the links point at the right hash for the current lockfile and requirements, and relink or reinstall when a rebase changed them.
   - `rm <branch>`: remove the worktree and its own output (`test-results/`, `build-pages/`, `.vite-cache/`), but never the shared caches.
@@ -129,7 +129,7 @@ branch hit the same conflicts when it rebased at the end.
 
 Phase 2 isolates parallel runs. This phase makes each run, local and in CI, smaller and faster. The letters continue after J.
 
-- [ ] **K. `run-tests.sh --changed[=<base>]`.** Choose stages from the changed paths:
+- [x] **K. `run-tests.sh --changed[=<base>]`.** Choose stages from the changed paths:
   - `android-lab/**` → android pytest and PENT-07;
   - `source-lab/**` → source-lab pytest;
   - `cleanup-lab/**` → cleanup unittest, and `cargo test` only when `qrust-scan/` changed;
@@ -139,30 +139,57 @@ Phase 2 isolates parallel runs. This phase makes each run, local and in CI, smal
   - `dashboard/**` → typecheck and `test:i18n`.
 
   Shared files (`console/**`, requirements files, `run-tests.sh` itself) run everything. Also add `--all` and `--dry-run`. `--quick` keeps its meaning. It shares the change detection with `e2e.sh --changed` (item G).
-- [ ] **L. Python tests per file.** Inside a lab, run only the test files whose imports reach the changed modules: a small import scan, or `pytest --testmon` if the dependency is accepted.
-- [ ] **M. Cancel superseded runs.** Every workflow gets `concurrency: { group: ${{ github.workflow }}-${{ github.ref }}, cancel-in-progress: true }`. Tag and release runs keep `cancel-in-progress: false`.
-- [ ] **N. Package builds only when packaging changes.**
+- [x] **L. Python tests per file.** Inside a lab, run only the test files whose imports reach the changed modules: a small import scan, or `pytest --testmon` if the dependency is accepted.
+- [x] **M. Cancel superseded runs.** Every workflow gets `concurrency: { group: ${{ github.workflow }}-${{ github.ref }}, cancel-in-progress: true }`. Tag and release runs keep `cancel-in-progress: false`.
+- [x] **N. Package builds only when packaging changes.**
   - `release-*.yml` on PRs runs only for `app/**`, `console/**` (what the app bundles), its own workflow file, and `dashboard/astro.config.mjs` or `dashboard/package.json`. Dashboard source is already tested by `dashboard-e2e`.
   - On a PR, release-mac builds unsigned and runs no notarization, and release-win runs no SignPath step.
   - Full packaging stays on `app-v*` tags, `workflow_dispatch` and an optional nightly run.
-- [ ] **O. Faster `dashboard-e2e`.**
+- [x] **O. Faster `dashboard-e2e`.**
   - Cache the Playwright browsers (`~/.cache/ms-playwright`, keyed on the Playwright version).
   - Split the specs over 3–4 jobs with `--shard=i/n`, then merge the reports.
   - On PRs, run the specs from `affected.json` (item G) plus the smoke set. On master, run the full suite.
   - Upload traces and screenshots only on failure.
-- [ ] **P. CI caches.** `Swatinem/rust-cache` in the release and `cargo test` jobs. `actions/setup-python` with `cache: pip` for the Python suites.
+- [x] **P. CI caches.** `Swatinem/rust-cache` in the release and `cargo test` jobs. `actions/setup-python` with `cache: pip` for the Python suites.
 - [ ] **Q. Fast required checks.** Branch protection requires `dashboard-e2e` (affected specs), a new `unit` job (`run-tests.sh --changed`), `check` + `test:i18n`, and `lat check`. Release builds are informational on PRs, not required.
-- [ ] **R. An optional pre-push hook.** `scripts/hooks/pre-push` runs `run-tests.sh --changed --quick`, plus `npm run check` when `dashboard/**` changed. `scripts/worktree.sh new` installs it; `OSLAB_SKIP_PREPUSH=1` skips it.
-- [ ] **S. Measure.** `run-tests.sh` writes stage timings to `test-results/timings.json`, and each CI job prints a timing summary. Each Phase 2b PR records times before and after in its description.
+- [x] **R. An optional pre-push hook.** `scripts/hooks/pre-push` runs `run-tests.sh --changed --quick`, plus `npm run check` when `dashboard/**` changed. `scripts/worktree.sh new` installs it; `OSLAB_SKIP_PREPUSH=1` skips it.
+- [x] **S. Measure.** `run-tests.sh` writes stage timings to `test-results/timings.json`, and each CI job prints a timing summary. Each Phase 2b PR records times before and after in its description.
 
 Order: M and N first (workflow files only, little risk, the biggest CI saving), together with Phase 1. Then O's browser cache and sharding, which help before `affected.json` exists. K, L and R come with the Phase 2 tooling PR, because they share item G's change detection.
 
+### Status (PR #290, 2026-11-16)
+
+Phase 2, 2b and 3 are implemented in this PR, except E (optional) and the branch-protection
+half of Q. Where the code differs from the text above:
+
+- **C** uses a git merge driver instead of either option: `scripts/lib/i18n-merge-driver.mjs`
+  merges the locale files key by key, so two branches that append keys no longer conflict.
+  It needs no reordering of the 2,766-key files, so the branches still in flight do not get
+  one more conflict, and it works for them as soon as `scripts/worktree.sh doctor` has set the
+  local git config. Only a key given different texts on both sides stops the merge.
+- **D**: `dashboard-dist.yml` needs a `DIST_PR_TOKEN` secret or the repository setting "Allow
+  GitHub Actions to create and approve pull requests" (currently off), because master requires
+  a PR and the default token is read-only. Repository auto-merge is off, but master has no
+  required checks, so the workflow merges its PR directly. `app/scripts/stage-runtime.mjs`
+  already builds a fresh dashboard before staging, so it needed no change.
+- **B**: tests serve their own build from `dashboard/.e2e-dist` (rebuilt when a hash of the
+  sources changes), so a local run never rewrites the committed `dist/`.
+- **G**: `docs/legal/**` maps to the legal routes, because those pages render it.
+- **Q**: the `check` job (in `dashboard-e2e`) and a new `unit` workflow
+  (`run-tests.sh --changed`) exist. Making them required is a branch-protection change for the
+  maintainer, after master is green: on Linux, master already fails 18 android tests
+  (`test_winapps.py`, `test_oslab_console.py`), 11 cleanup-engine tests (`test_relocation.py`,
+  `test_explorer.py`, `test_safety.py`) and `lat check` (two leading paragraphs too long in
+  `dashboard.md` and `win-lab.md`). This branch has the same results.
+- **R**: the hook wrapper goes into the repository's shared `.git/hooks`, so it applies to
+  every worktree; an existing different `pre-push` hook is left alone.
+
 ## Phase 3: documentation (same PR as Phase 2)
 
-- [ ] `AGENTS.md`: a short "Parallel agents" section with the Phase 0 rules, `scripts/worktree.sh new` as the only way to start a worktree, and a link to the landing steps. `CLAUDE.md` and `GEMINI.md` already point every agent to `AGENTS.md`, so the rules reach all of them; check that any other agent instruction files in the repo point there too.
-- [ ] `.gitignore`: the per-worktree cache folders (`dashboard/.vite-cache/`) and the `.venv-test` symlink.
-- [ ] `lat.md/tooling.md`: a "Parallel work" section with the causes above, `scripts/e2e.sh`, `scripts/worktree.sh`, the shared cache table, and the landing steps. Run `lat check`.
-- [ ] `CONTRIBUTING.md`: the landing steps and conflict rules for human contributors.
+- [x] `AGENTS.md`: a short "Parallel agents" section with the Phase 0 rules, `scripts/worktree.sh new` as the only way to start a worktree, and a link to the landing steps. `CLAUDE.md` and `GEMINI.md` already point every agent to `AGENTS.md`, so the rules reach all of them; check that any other agent instruction files in the repo point there too.
+- [x] `.gitignore`: the per-worktree cache folders (`dashboard/.vite-cache/`) and the `.venv-test` symlink.
+- [x] `lat.md/tooling.md`: a "Parallel work" section with the causes above, `scripts/e2e.sh`, `scripts/worktree.sh`, the shared cache table, and the landing steps. Run `lat check`.
+- [x] `CONTRIBUTING.md`: the landing steps and conflict rules for human contributors.
 - [ ] This plan: tick items off and link the PRs; close it when Phase 3 lands.
 
 ## Phase 4: open the task system to every contributor
