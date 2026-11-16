@@ -23,13 +23,14 @@
 #   --locales <list>|all locales to crawl (default en, plus changed locale files)
 #   --widths <list>      desktop,phone (default desktop)
 #   --out <dir>          output folder (default dashboard/test-results/<run-id>/)
-#   --build | --no-build rebuild dist first (default: when the sources changed since the last build)
+#   --build | --no-build rebuild the test build in dashboard/.e2e-dist first (default: when
+#                        the sources changed since its last build); dist/ is never touched
 #   --dry-run            print the plan and exit
 #   -h, --help           this help
 #
 # Each option has an environment variable that playwright.config.ts reads, so a plain
 # `npx playwright test` follows the same defaults: OSLAB_E2E_PORT, OSLAB_E2E_WORKERS,
-# OSLAB_E2E_REUSE, OSLAB_E2E_SCREENSHOTS, OSLAB_E2E_TRACE, OSLAB_E2E_VIDEO, OSLAB_E2E_OUT,
+# OSLAB_E2E_REUSE, OSLAB_E2E_DIST, OSLAB_E2E_SCREENSHOTS, OSLAB_E2E_TRACE, OSLAB_E2E_VIDEO, OSLAB_E2E_OUT,
 # OSLAB_CRAWL, OSLAB_CRAWL_ROUTES, OSLAB_CRAWL_LOCALES, OSLAB_CRAWL_WIDTHS.
 # The lock lives in OSLAB_LOCK_DIR (default ${TMPDIR:-/tmp}).
 #
@@ -181,12 +182,15 @@ source_hash() {
     git ls-files --others --exclude-standard -- src public | while IFS= read -r f; do git hash-object "$f"; done
   } | git hash-object --stdin)
 }
-STAMP="$DASH/test-results/.dist-source-hash"
+# Tests serve their own build in dashboard/.e2e-dist (git-ignored), never the committed dist/,
+# so a test run cannot leave changes in dist/ or race another run that rebuilds it.
+E2E_DIST="$DASH/.e2e-dist"
+STAMP="$E2E_DIST/.source-hash"
 current_hash="$(source_hash)"
 needs_build=0
 if [ "$build" = 1 ]; then needs_build=1
 elif [ "$build" = auto ]; then
-  if [ ! -f "$DASH/dist/index.html" ] || [ "$(cat "$STAMP" 2>/dev/null)" != "$current_hash" ]; then needs_build=1; fi
+  if [ ! -f "$E2E_DIST/index.html" ] || [ "$(cat "$STAMP" 2>/dev/null)" != "$current_hash" ]; then needs_build=1; fi
 fi
 
 if [ "$full" = 1 ]; then what="the whole suite"; else what="${specs[*]+"${specs[*]}"}"; fi
@@ -216,7 +220,7 @@ print_plan() {
   if [ "$crawl" = 1 ]; then
     echo "  crawl:        routes ${routes:-main routes}; locales $locales; widths $widths"
   fi
-  echo "  build dist:   $([ "$needs_build" = 1 ] && echo yes || echo no)"
+  echo "  build:        $([ "$needs_build" = 1 ] && echo "yes, into dashboard/.e2e-dist" || echo "no, dashboard/.e2e-dist is current")"
   echo "  output:       $out"
   if [ -x "$DASH/node_modules/.bin/playwright" ]; then
     local n; n="$(count_tests)"
@@ -263,16 +267,17 @@ if [ "$lock" = 1 ]; then
 fi
 
 if [ "$needs_build" = 1 ]; then
-  echo "e2e.sh: building dist (sources changed since the last e2e build)"
-  (cd "$DASH" && npm run build --silent >/dev/null)
-  mkdir -p "$DASH/test-results" && echo "$current_hash" > "$STAMP"
+  echo "e2e.sh: building dashboard/.e2e-dist (sources changed since the last e2e build)"
+  rm -rf "$E2E_DIST"
+  (cd "$DASH" && ./node_modules/.bin/astro build --outDir "$E2E_DIST" >/dev/null)
+  echo "$current_hash" > "$STAMP"
 fi
 
 mkdir -p "$out"
 start=$(date +%s)
 set +e
 (cd "$DASH" && \
-  OSLAB_E2E_PORT="$port" OSLAB_E2E_WORKERS="$workers" OSLAB_E2E_REUSE=0 \
+  OSLAB_E2E_DIST="$E2E_DIST" OSLAB_E2E_PORT="$port" OSLAB_E2E_WORKERS="$workers" OSLAB_E2E_REUSE=0 \
   OSLAB_E2E_SCREENSHOTS="$pw_screenshot" OSLAB_E2E_TRACE="$pw_trace" OSLAB_E2E_VIDEO="$pw_video" \
   OSLAB_E2E_OUT="$out" OSLAB_CRAWL="$crawl" OSLAB_CRAWL_ROUTES="$routes" \
   OSLAB_CRAWL_LOCALES="$locales" OSLAB_CRAWL_WIDTHS="$widths" \

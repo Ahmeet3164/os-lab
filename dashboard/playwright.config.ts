@@ -17,6 +17,9 @@ const screenshot = pick(env.OSLAB_E2E_SCREENSHOTS, ["off", "on", "only-on-failur
 const trace = pick(env.OSLAB_E2E_TRACE, ["off", "on", "retain-on-failure"] as const, "retain-on-failure");
 const video = pick(env.OSLAB_E2E_VIDEO, ["off", "retain-on-failure"] as const, "off");
 const out = env.OSLAB_E2E_OUT;
+// The folder the web server serves: dist/ by default (CI builds it), dashboard/.e2e-dist when
+// scripts/e2e.sh runs, so local test builds never rewrite the committed dist/.
+const served = env.OSLAB_E2E_DIST ?? "dist";
 // The crawl spec (plan item F) saves full-page screenshots; it only runs when asked.
 const crawl = env.OSLAB_CRAWL === "1";
 
@@ -39,7 +42,7 @@ export default defineConfig({
   },
   webServer: {
     // Windows names the interpreter python; POSIX toolchains commonly provide python3.
-    command: `${process.platform === "win32" ? "python" : "python3"} -m http.server ${port} --bind 127.0.0.1 --directory dist`,
+    command: `${process.platform === "win32" ? "python" : "python3"} -m http.server ${port} --bind 127.0.0.1 --directory ${JSON.stringify(served)}`,
     url: `http://127.0.0.1:${port}/`,
     reuseExistingServer: reuse,
     // http.server logs every request; OSLAB_E2E_SERVER_LOG=1 shows them.
