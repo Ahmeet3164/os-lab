@@ -53,7 +53,8 @@ lat.md/.cache/
 *.local.md
 .private/
 teached/**/*
-dashboard/node_modules/
+# A symlink into the shared cache in worktrees made by scripts/worktree.sh, so no trailing slash
+dashboard/node_modules
 dashboard/.check-source-pages/
 dashboard/test-results/
 dashboard/playwright-report/
