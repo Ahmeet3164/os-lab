@@ -28,6 +28,7 @@ branch hit the same conflicts when it rebased at the end.
 - [ ] Rebase on `origin/master` at the start of each work phase, not only at the end.
 - [ ] Check `reservations/` and the remote branches before choosing a task ID.
 - [ ] Run at most two or three heavy agents at once on a laptop.
+- [ ] Each worktree uses the shared dependency and build caches (item I) instead of installing or downloading its own copy, and never shares build output with another worktree.
 
 ## Phase 1: land the work in progress, one branch at a time
 
@@ -94,10 +95,30 @@ branch hit the same conflicts when it rebased at the end.
 
   The agent shows the `--dry-run` output with its question, so the user sees what will run and roughly how long it takes.
 
+- [ ] **I. Shared caches for parallel worktrees.** Every worktree reuses one copy of each dependency and download cache, which saves disk space and makes installs and builds faster. Cache root: `OSLAB_CACHE_ROOT` (default `~/.cache/os-lab`; on the Mac, set it to the external volume, for example `/Volumes/Projects/iQ/.cache-build`, so nothing lands on the system disk).
+
+  | Cache | How it is shared | Why this way |
+  |---|---|---|
+  | `dashboard/node_modules` | Symlink to `$OSLAB_CACHE_ROOT/node_modules/<hash of package-lock.json>/node_modules`, installed once with `npm ci` | Keyed by the lockfile, so a branch that changes dependencies gets its own copy and never breaks the others |
+  | npm downloads | `npm_config_cache=$OSLAB_CACHE_ROOT/npm` | Content-addressed and safe to share; `npm ci --prefer-offline` stops downloading again |
+  | Vite and Astro build caches | Per worktree: `vite.cacheDir` set outside the shared `node_modules` (for example `dashboard/.vite-cache`, git-ignored) | Vite normally writes into `node_modules/.vite`; in a shared `node_modules`, worktrees would overwrite each other's cache |
+  | Playwright browsers | `PLAYWRIGHT_BROWSERS_PATH=$OSLAB_CACHE_ROOT/playwright` | Versioned folders, safe to share; one download for every worktree |
+  | Python test environment | `.venv-test` symlinked to `$OSLAB_CACHE_ROOT/venv/<hash of requirements files>`; pip cache in `$OSLAB_CACHE_ROOT/pip` | Keyed by the requirements, like `node_modules` |
+  | Cargo (desktop app) | Shared `CARGO_HOME` registry, plus `sccache` (`RUSTC_WRAPPER=sccache`, `SCCACHE_DIR=$OSLAB_CACHE_ROOT/sccache`); `target/` stays per worktree | A shared `target/` makes builds wait on Cargo's lock and rebuild when branches differ; `sccache` shares compiled crates without that |
+
+  Never shared: `dashboard/dist`, `build-pages/`, `test-results/`, `.astro/`, lab `.env` files, `storage/`, `artifacts/`, and any `target/` folder. Those are per-branch output or local secrets.
+- [ ] **J. `scripts/worktree.sh`.** One script for creating and removing worktrees with the caches wired in, so agents do not hand-make symlinks:
+  - `new <branch>`: fetch, create the worktree from `origin/master`, link `node_modules` and `.venv-test` from the cache (installing into the cache only if that lockfile or requirements hash is new), set the cache variables, and print the worktree path and its e2e port.
+  - `doctor`: check that the links point at the right hash for the current lockfile and requirements, and relink or reinstall when a rebase changed them.
+  - `rm <branch>`: remove the worktree and its own output (`test-results/`, `build-pages/`, `.vite-cache/`), but never the shared caches.
+  - `cache prune`: delete cache entries that no worktree uses, after asking the user.
+  - Must work on macOS and Linux and pass `bash -n`.
+
 ## Phase 3: documentation (same PR as Phase 2)
 
-- [ ] `AGENTS.md`: a short "Parallel agents" section with the Phase 0 rules and a link to the landing steps.
-- [ ] `lat.md/tooling.md`: a "Parallel work" section with the causes above, `scripts/e2e.sh`, and the landing steps. Run `lat check`.
+- [ ] `AGENTS.md`: a short "Parallel agents" section with the Phase 0 rules, `scripts/worktree.sh new` as the only way to start a worktree, and a link to the landing steps. `CLAUDE.md` and `GEMINI.md` already point every agent to `AGENTS.md`, so the rules reach all of them; check that any other agent instruction files in the repo point there too.
+- [ ] `.gitignore`: the per-worktree cache folders (`dashboard/.vite-cache/`) and the `.venv-test` symlink.
+- [ ] `lat.md/tooling.md`: a "Parallel work" section with the causes above, `scripts/e2e.sh`, `scripts/worktree.sh`, the shared cache table, and the landing steps. Run `lat check`.
 - [ ] `CONTRIBUTING.md`: the landing steps and conflict rules for human contributors.
 - [ ] This plan: tick items off and link the PRs; close it when Phase 3 lands.
 
@@ -111,6 +132,10 @@ branch hit the same conflicts when it rebased at the end.
 - [ ] `scripts/e2e.sh --changed --dry-run` on a branch that only touches `src/views/cleanup/` lists only the cleanup specs and `/cleanup/` routes.
 - [ ] Every argument in item B can be switched on and off, and `--help` lists them all with their defaults.
 - [ ] `--no-lock` together with `--full` or `--crawl` is refused.
+- [ ] Two worktrees made with `scripts/worktree.sh new` share one `node_modules`, one Playwright browser folder and one virtualenv, and the second one is ready without downloading anything.
+- [ ] A branch that changes `package-lock.json` gets its own `node_modules` after `scripts/worktree.sh doctor`, and the other worktrees keep working.
+- [ ] Two worktrees build the dashboard at the same time without touching each other's Vite cache or `dist`.
+- [ ] With `OSLAB_CACHE_ROOT` set to an external volume, nothing new is written under `~/.cache`, `~/.npm` or `~/Library/Caches` by the os-lab scripts.
 - [ ] `npm run check`, `npm run test:i18n`, `npm run build` and `lat check` pass.
 
 ## Appendix: session reports from 2026-11-16
