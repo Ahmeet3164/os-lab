@@ -99,6 +99,7 @@ else
       cleanup-lab/engine/*) add cleanup_engine ;;
       cleanup-lab/*) add cleanup_ref cleanup_engine ;;
       linux-lab/*) add linux ;;
+      scripts/analysis/ext_scan/*) add ext_scan ;;
       scripts/session_scribe/*) add session_scribe ;;
       lat.md/*) add lat ;;
       dashboard/*) add dashboard ;;
@@ -330,6 +331,22 @@ if want session_scribe; then
     fi
   else
     bad "no python3 for scripts/session_scribe/tests (PENT-20)"
+  fi
+  stage_end
+fi
+
+# PENT-02 extension scanner tests (pytest)
+if want ext_scan; then
+  stage_start ext_scan
+  hdr "PENT-02 extension scanner tests (pytest)"
+  if ensure_pytest; then
+    if ( cd "$ROOT" && cd scripts/analysis && "$PY" -m pytest ext_scan/tests -q ); then
+      ok "scripts/analysis/ext_scan (PENT-02)"
+    else
+      bad "scripts/analysis/ext_scan (PENT-02)"
+    fi
+  else
+    bad "no python3 for scripts/analysis/ext_scan (PENT-02)"
   fi
   stage_end
 fi
