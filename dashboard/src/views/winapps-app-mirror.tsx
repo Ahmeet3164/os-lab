@@ -21,6 +21,8 @@ export function WinAppsPanel() {
   const [shot, setShot] = useState<string | null>(null);
   const [shotError, setShotError] = useState<string | null>(null);
   const shotRef = useRef<string | null>(null);
+  // Only the newest capture may update the view; slower, older responses are dropped.
+  const grabSeq = useRef(0);
 
   const windows = data?.windows ?? [];
   const selected = windows.find((window) => window.windowId === windowId) ?? windows[0] ?? null;
@@ -32,18 +34,22 @@ export function WinAppsPanel() {
 
   const grab = useCallback(async () => {
     if (!selected) return;
+    const seq = ++grabSeq.current;
     try {
       const res = await fetch(api.winappsAppScreenshotUrl(selected.windowId), { cache: "no-store" });
       if (!res.ok) {
         const body = (await res.json().catch(() => ({}))) as { error?: string };
         throw new Error(body.error || `${res.status} ${res.statusText}`);
       }
-      const url = URL.createObjectURL(await res.blob());
+      const blob = await res.blob();
+      if (seq !== grabSeq.current) return;
+      const url = URL.createObjectURL(blob);
       if (shotRef.current) URL.revokeObjectURL(shotRef.current);
       shotRef.current = url;
       setShot(url);
       setShotError(null);
     } catch (e) {
+      if (seq !== grabSeq.current) return;
       setShot(null);
       setShotError(message(e));
     }
@@ -107,9 +113,18 @@ export function WinAppsPanel() {
                 {`${selected.width}×${selected.height}`}
               </Badge>
             ) : null}
+            {selected?.elevated ? <Badge tone="warning">Elevated</Badge> : null}
           </div>
 
-          <div className="relative w-full overflow-hidden rounded-xl border border-(--iux-border) bg-black">
+          <div
+            className="relative w-full overflow-hidden rounded-xl border border-(--iux-border) bg-black"
+            style={{
+              aspectRatio: `${selected?.width || 4} / ${selected?.height || 3}`,
+              // Keep the window's own shape but never taller than 70% of the viewport.
+              maxWidth: `calc(70vh * ${selected?.width || 4} / ${selected?.height || 3})`,
+              marginInline: "auto"
+            }}
+          >
             {shot ? (
               <img
                 src={shot}
@@ -118,14 +133,14 @@ export function WinAppsPanel() {
                 draggable={false}
               />
             ) : shotError ? (
-              <div className="flex h-full min-h-56 flex-col items-center justify-center gap-2 p-6 text-center">
+              <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 p-4 text-center">
                 <p className="text-xs text-zinc-400">{shotError}</p>
                 <button type="button" className="iux-btn" data-variant="outline" onClick={() => void grab()}>
                   Retry
                 </button>
               </div>
             ) : (
-              <div className="flex h-full min-h-56 items-center justify-center" aria-busy="true">
+              <div className="absolute inset-0 flex items-center justify-center" aria-busy="true">
                 <CircleNotchIcon size={22} className="animate-spin text-zinc-500" aria-hidden />
               </div>
             )}

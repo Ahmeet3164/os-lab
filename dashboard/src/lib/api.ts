@@ -193,6 +193,8 @@ export interface WinApp {
   windowId: number;
   pid: number;
   app: string;
+  /** Whether the owning process is elevated; null when Windows would not report it. */
+  elevated: boolean | null;
   title: string;
   className: string;
   x: number;
@@ -204,29 +206,6 @@ export interface WinAppsInfo {
   available: boolean;
   reason: string | null;
   windows: WinApp[];
-}
-/** One visible desktop application in the current Windows session (console/windows_apps.py). */
-export interface WindowsApp {
-  /** Stable PID + process start-time identity; a reused PID never replaces a closed app. */
-  id: string;
-  pid: number;
-  name: string;
-  title: string;
-  /** Unix epoch milliseconds. */
-  startedAt: number;
-  memoryBytes: number | null;
-  cpuSeconds: number | null;
-  responding: boolean;
-}
-export interface WindowsAppsInfo {
-  available: boolean;
-  reason: string | null;
-  provider: string;
-  sessionId: number | null;
-  checkedAt: number;
-  partial: boolean;
-  skipped: number;
-  apps: WindowsApp[];
 }
 export interface Report {
   name: string;
@@ -480,7 +459,6 @@ export const api = {
     post<{ ok: boolean; pid: number; x: number; y: number }>("/api/labs/macos/click", { pid, x, y }),
   winappsApps: () => call<WinAppsInfo>("/api/labs/winapps/apps"),
   winappsAppScreenshotUrl: (windowId: number) => `/api/labs/winapps/apps/${windowId}/screenshot`,
-  windowsApps: () => call<WindowsAppsInfo>("/api/labs/windows/apps"),
   plan: (request: LabRequest) => post<{ plan: LabPlan; token: string }>("/api/labs/plan", { request }),
   start: (request: LabRequest, token: string) => post<LabJob>("/api/labs/start", { request, token }),
   jobs: () => call<{ jobs: LabJob[] }>("/api/jobs"),

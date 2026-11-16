@@ -71,11 +71,6 @@ permission). `macos-app.sh click` brings the owning app forward and posts
 one CGEvent click; the mirror previews it like any action, and clicks land
 without a preview only while control mode is armed.
 
-On Windows hosts, [[dashboard]] adds a separate, read-only native application
-monitor for the current user session through [[console/windows_apps.py]].
-It is a host capability rather than the Windows VM lifecycle, works before
-WSL2/VM readiness, and public Pages never mounts or calls it.
-
 ## Research
 
 The top iOS-in-Docker options, networking and operational limits.

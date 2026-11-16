@@ -51,26 +51,24 @@ The first boot downloads media and installs Windows automatically. Expect
 Connect over RDP (`make rdp` prints the details) or use the web viewer for the
 initial setup.
 
-## Native host application monitor
-
-On a real Windows host, the Windows Lab page adds a **read-only** monitor for
-visible desktop applications in the current user session: process name, PID,
-window title, start time, working-set memory, total CPU time and responsiveness.
-This is a host capability, not the Windows VM; it does not replace WSL2/VM
-readiness and it is intentionally available before the VM is set up.
-
-The implementation lives in [`console/windows_apps.py`](../console/windows_apps.py).
-It uses PowerShell's built-in process query interface, bounds every query,
-returns structured JSON, and never offers process control, command-line values
-or arbitrary shell access. Public Pages does not mount or call this panel.
-A process is identified by PID plus start time, so Windows reusing a PID cannot
-replace the selected application.
-
 ## Windows Apps Lab
 
-On a real Windows host, a separate `/labs/winapps/` page mirrors visible desktop
-application windows. It is independent of this Windows VM; no process control is
-offered in the read-only phase.
+On a real Windows host, a separate `/labs/winapps/` page mirrors one visible
+desktop window. It is independent of this Windows VM, works before the VM is set
+up, and offers no input or process control in the read-only phase. The collector
+is [`console/winapps.py`](../console/winapps.py) (standard-library ctypes only).
+
+```powershell
+python console/winapps.py            # JSON window inventory
+python console/winapps.py --doctor   # desktop session, console elevation, capture probe
+```
+
+Honest limits: a window is listed only when it is on screen (visible, captioned,
+not minimized, not a tool window and not DWM-cloaked, so suspended UWP frames are
+skipped). `PrintWindow` captures what Windows will render for that window; a
+standard-user console may be refused or get a blank image for elevated windows,
+which the list marks `Elevated` and `--doctor` reports for the console itself.
+UAC secure-desktop prompts cannot be captured.
 
 ## Make targets
 

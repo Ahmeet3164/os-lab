@@ -9,6 +9,7 @@ const winapps = {
       windowId: 100,
       pid: 100,
       app: "Notepad",
+      elevated: false,
       title: "Fixture - Notepad",
       className: "Notepad",
       x: 10,
@@ -18,6 +19,12 @@ const winapps = {
     }
   ]
 };
+
+// A real, decodable 1x1 PNG so the browser actually paints the mirror.
+const PNG_1X1 = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+  "base64"
+);
 
 const labs: LabStatus[] = [
   { id: "winapps", label: "Windows Apps Lab", summary: "Read-only mirror of visible desktop applications on this Windows host.", state: "ready", provider: "native-windows", reasons: [], requirements: [], notes: [], actions: [], installed: true },
@@ -57,14 +64,36 @@ test("the Windows Apps Lab mirrors one real window without offering control", as
   await page.route("**/api/labs/winapps/apps/100/screenshot", (route) => route.fulfill({
     status: 200,
     contentType: "image/png",
-    body: Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
+    body: PNG_1X1
   }));
 
   await page.goto("/labs/winapps/");
   await expect(page.getByRole("heading", { name: "Window mirror" })).toBeVisible();
   await expect(page.locator("select#winapps-window")).toContainText("Notepad");
-  await expect(page.locator("img[alt='Mirror of Notepad']")).toHaveCount(1);
+  await expect(page.getByText("320×240")).toBeVisible();
+  const mirror = page.locator("img[alt='Mirror of Notepad']");
+  // Painted at the window's own 4:3 shape, not collapsed to an empty box.
+  await expect(mirror).toBeVisible();
+  const box = await mirror.boundingBox();
+  expect(box!.height).toBeGreaterThan(100);
+  expect(box!.width / box!.height).toBeCloseTo(320 / 240, 1);
+  await expect(page.getByText("Elevated")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Arm control" })).toHaveCount(0);
+});
+
+test("an elevated window is marked instead of silently failing", async ({ page }) => {
+  await mockApi(page);
+  await page.route("**/api/labs/winapps/apps", (route) => route.fulfill({
+    json: { ...winapps, windows: [{ ...winapps.windows[0], elevated: true }] }
+  }));
+  await page.route("**/api/labs/winapps/apps/100/screenshot", (route) => route.fulfill({
+    status: 400,
+    json: { error: "Could not capture that window; try another application window" }
+  }));
+
+  await page.goto("/labs/winapps/");
+  await expect(page.getByText("Elevated")).toBeVisible();
+  await expect(page.getByText("Could not capture that window; try another application window")).toBeVisible();
 });
 
 test("the panel reports an unavailable native mirror", async ({ page }) => {

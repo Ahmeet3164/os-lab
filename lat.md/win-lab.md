@@ -42,6 +42,14 @@ serves a read-only desktop mirror through [[console/winapps.py]] with ctypes
 window enumeration and a `PrintWindow` capture; no process control is offered.
 This is separate from the Windows VM lifecycle and public Pages never mounts it.
 
+A window is listed only when it is actually on screen: visible, captioned,
+not minimized, not a tool or shell window and not DWM-cloaked (suspended UWP
+frames stay "visible" to Win32 but cannot be seen). Each entry carries
+`elevated` (true, false, or null when Windows will not say) so an elevated
+window a standard-user console cannot capture is marked rather than hidden.
+`GET /api/labs/winapps/doctor` and `python console/winapps.py --doctor` report
+the desktop session, this console's own elevation and one live capture probe.
+
 ## Research
 
 Windows-lab research and the command reference.

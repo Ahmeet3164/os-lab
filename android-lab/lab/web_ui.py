@@ -359,6 +359,11 @@ class LabHttpHandler(BaseHTTPRequestHandler):
                 self._json(501, {"error": "The Windows app mirror module (console/winapps.py) is not installed"})
                 return
             self._json(200, winapps.winapps_windows())
+        elif len(parts) == 4 and parts[:2] == ["api", "labs"] and parts[2] == "winapps" and parts[3] == "doctor":
+            if winapps is None:
+                self._json(501, {"error": "The Windows app mirror module (console/winapps.py) is not installed"})
+                return
+            self._json(200, winapps.doctor())
         elif len(parts) == 6 and parts[:2] == ["api", "labs"] and parts[2] == "winapps" and parts[3] == "apps" and parts[5] == "screenshot":
             if winapps is None:
                 self._json(501, {"error": "The Windows app mirror module (console/winapps.py) is not installed"})

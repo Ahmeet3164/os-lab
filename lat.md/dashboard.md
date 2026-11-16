@@ -48,8 +48,10 @@ On Windows hosts, the new `winapps` lab serves a read-only desktop mirror throug
 `/api/labs/winapps/apps` and `/api/labs/winapps/apps/<hwnd>/screenshot`. The
 backend uses ctypes to enumerate visible, captioned top-level windows and
 captures one window with `PrintWindow(PW_RENDERFULLCONTENT)`. The panel shows
-the selected window and its dimensions; it is mounted only locally, is separate
-from the WSL2-backed VM lifecycle, and does not offer input control.
+the selected window at its own aspect ratio, its dimensions and an `Elevated`
+badge when the owning process is elevated; only the newest capture updates the
+view. It is mounted only locally, is separate from the WSL2-backed VM lifecycle,
+and does not offer input control.
 
 ## UX readiness
 

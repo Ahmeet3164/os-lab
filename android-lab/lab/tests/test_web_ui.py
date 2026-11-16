@@ -140,6 +140,39 @@ def test_winapps_endpoint_serves_the_read_only_inventory(web_server, monkeypatch
     assert status == 501
 
 
+def test_winapps_screenshot_serves_a_png_and_reports_stale_windows(web_server, monkeypatch):
+    import web_ui
+
+    png = b"\x89PNG\r\n\x1a\n"
+    monkeypatch.setattr(web_ui.winapps, "winapps_window_screenshot", lambda window_id: png)
+    reply = urllib.request.urlopen(f"{web_server}/api/labs/winapps/apps/7/screenshot")
+    assert reply.status == 200 and reply.headers["Content-Type"] == "image/png"
+    assert reply.headers["Cache-Control"] == "no-store" and reply.read() == png
+
+    def stale(_window_id):
+        raise web_ui.winapps.WinAppError("That window is not on screen anymore; refresh the mirror")
+
+    monkeypatch.setattr(web_ui.winapps, "winapps_window_screenshot", stale)
+    with pytest.raises(urllib.error.HTTPError) as caught:
+        urllib.request.urlopen(f"{web_server}/api/labs/winapps/apps/7/screenshot")
+    assert caught.value.code == 400
+    assert "not on screen" in json.loads(caught.value.read().decode("utf-8"))["error"]
+
+
+def test_winapps_doctor_endpoint_serves_the_probe_and_is_501_without_the_module(web_server, monkeypatch):
+    import web_ui
+
+    probe = {"available": True, "desktop": True, "elevated": False, "capture": True, "windows": 1}
+    monkeypatch.setattr(web_ui.winapps, "doctor", lambda: probe)
+    data = json.loads(urllib.request.urlopen(f"{web_server}/api/labs/winapps/doctor").read().decode("utf-8"))
+    assert data == probe
+
+    monkeypatch.setattr(web_ui, "winapps", None)
+    with pytest.raises(urllib.error.HTTPError) as caught:
+        urllib.request.urlopen(f"{web_server}/api/labs/winapps/doctor")
+    assert caught.value.code == 501
+
+
 def test_scope_endpoint_reports_the_declared_scope(web_server, tmp_path, monkeypatch):
     path = tmp_path / "scope.json"
     monkeypatch.setenv("OSLAB_SCOPE_FILE", str(path))
