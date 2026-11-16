@@ -17,6 +17,8 @@ branch hit the same conflicts when it rebased at the end.
 | Shared files rewritten | `app-shell.tsx` conflicted with the new `winapps` lab (#287) | Nav, Spotlight and lab lists all live in one file |
 | Master's CI is red | `dashboard-e2e` failed on the last 5 runs; on master (run 43888450653) 22 failed and 66 passed in 22.1 min, all in `health-and-content.spec.ts`, mostly 30 s click timeouts, plus a strict-mode clash on the `Window` label after #289 | Nobody can tell a new failure from an old one, so every agent has to run the full suite locally to compare |
 | Task ID collision | CLN-30 was taken by another branch in progress | IDs were chosen without checking existing branches and `reservations/` |
+| CI runs far more than a change touches | `dashboard-e2e` runs all 12 specs (88 tests) in one job for any `dashboard/**` change: 22–24 min on 2026-11-16. `release-linux`, `release-mac` and `release-win` build installers on every PR touching `dashboard/**`, `app/**` or `console/**` (release-mac 12–17 min) | No sharding, no browser or Rust cache, no `concurrency` groups, and release builds trigger on dashboard source changes |
+| Local checks are all or nothing | `scripts/run-tests.sh` runs every stage, or `--quick` (all of stage 1: 89 Python test files plus `cargo test`). The feedback session ran the Python suite 4–5 times at about 45 s each | No way to run only the suites a change touches |
 
 ## Phase 0: rules that apply now
 
@@ -123,6 +125,38 @@ branch hit the same conflicts when it rebased at the end.
   - `cache prune`: delete cache entries that no worktree uses, after asking the user.
   - Must work on macOS and Linux and pass `bash -n`.
 
+## Phase 2b: run only what a change touches (with Phase 2)
+
+Phase 2 isolates parallel runs. This phase makes each run, local and in CI, smaller and faster. The letters continue after J.
+
+- [ ] **K. `run-tests.sh --changed[=<base>]`.** Choose stages from the changed paths:
+  - `android-lab/**` → android pytest and PENT-07;
+  - `source-lab/**` → source-lab pytest;
+  - `cleanup-lab/**` → cleanup unittest, and `cargo test` only when `qrust-scan/` changed;
+  - `linux-lab/**` → OS-30 mocks;
+  - `*.sh` → `bash -n` on the changed scripts only;
+  - `lat.md/**` or code with `@lat` → `lat check`;
+  - `dashboard/**` → typecheck and `test:i18n`.
+
+  Shared files (`console/**`, requirements files, `run-tests.sh` itself) run everything. Also add `--all` and `--dry-run`. `--quick` keeps its meaning. It shares the change detection with `e2e.sh --changed` (item G).
+- [ ] **L. Python tests per file.** Inside a lab, run only the test files whose imports reach the changed modules: a small import scan, or `pytest --testmon` if the dependency is accepted.
+- [ ] **M. Cancel superseded runs.** Every workflow gets `concurrency: { group: ${{ github.workflow }}-${{ github.ref }}, cancel-in-progress: true }`. Tag and release runs keep `cancel-in-progress: false`.
+- [ ] **N. Package builds only when packaging changes.**
+  - `release-*.yml` on PRs runs only for `app/**`, `console/**` (what the app bundles), its own workflow file, and `dashboard/astro.config.mjs` or `dashboard/package.json`. Dashboard source is already tested by `dashboard-e2e`.
+  - On a PR, release-mac builds unsigned and runs no notarization, and release-win runs no SignPath step.
+  - Full packaging stays on `app-v*` tags, `workflow_dispatch` and an optional nightly run.
+- [ ] **O. Faster `dashboard-e2e`.**
+  - Cache the Playwright browsers (`~/.cache/ms-playwright`, keyed on the Playwright version).
+  - Split the specs over 3–4 jobs with `--shard=i/n`, then merge the reports.
+  - On PRs, run the specs from `affected.json` (item G) plus the smoke set. On master, run the full suite.
+  - Upload traces and screenshots only on failure.
+- [ ] **P. CI caches.** `Swatinem/rust-cache` in the release and `cargo test` jobs. `actions/setup-python` with `cache: pip` for the Python suites.
+- [ ] **Q. Fast required checks.** Branch protection requires `dashboard-e2e` (affected specs), a new `unit` job (`run-tests.sh --changed`), `check` + `test:i18n`, and `lat check`. Release builds are informational on PRs, not required.
+- [ ] **R. An optional pre-push hook.** `scripts/hooks/pre-push` runs `run-tests.sh --changed --quick`, plus `npm run check` when `dashboard/**` changed. `scripts/worktree.sh new` installs it; `OSLAB_SKIP_PREPUSH=1` skips it.
+- [ ] **S. Measure.** `run-tests.sh` writes stage timings to `test-results/timings.json`, and each CI job prints a timing summary. Each Phase 2b PR records times before and after in its description.
+
+Order: M and N first (workflow files only, little risk, the biggest CI saving), together with Phase 1. Then O's browser cache and sharding, which help before `affected.json` exists. K, L and R come with the Phase 2 tooling PR, because they share item G's change detection.
+
 ## Phase 3: documentation (same PR as Phase 2)
 
 - [ ] `AGENTS.md`: a short "Parallel agents" section with the Phase 0 rules, `scripts/worktree.sh new` as the only way to start a worktree, and a link to the landing steps. `CLAUDE.md` and `GEMINI.md` already point every agent to `AGENTS.md`, so the rules reach all of them; check that any other agent instruction files in the repo point there too.
@@ -159,6 +193,11 @@ not depend on the course calendar. Do this after Phase 3, in its own PR.
 - [ ] A reservation older than 21 days with no PR shows as available on the Contribute page.
 - [ ] With `OSLAB_CACHE_ROOT` set to an external volume, nothing new is written under `~/.cache`, `~/.npm` or `~/Library/Caches` by the os-lab scripts.
 - [ ] A PR that changes `dashboard/dist/**` fails CI; a merged dashboard change gets its `dist` rebuilt and merged within one workflow run.
+- [ ] A dashboard-only PR runs no `release-*` workflow, and `run-tests.sh --changed` runs only stage 5.
+- [ ] A `cleanup-lab/` Python change runs no `cargo test` unless `qrust-scan/` changed.
+- [ ] Pushing twice to a PR cancels the first run of every workflow.
+- [ ] Sharded `dashboard-e2e` on master takes less than half of the 22 min it took on 2026-11-16.
+- [ ] A PR that touches one view finishes CI in under 10 min.
 - [ ] `npm run check`, `npm run test:i18n`, `npm run build` and `lat check` pass.
 
 ## Appendix: session reports from 2026-11-16
