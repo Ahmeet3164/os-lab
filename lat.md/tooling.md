@@ -231,6 +231,20 @@ serves it read-only. The command line checks one target and exits 0 in scope,
 1 refused and 2 for a usage or manifest error, with `--json` for agents and
 scripts. The tests are in [[android-lab/lab/tests/test_scope_guard.py]].
 
+## Session scribe
+
+PENT-20 runner and CLI in [[scripts/session_scribe/cli.py]].
+[[scripts/session_scribe/scope_guard.py#ScopeGuard]] enforces [[scripts/session_scribe/scope.json]] CIDRs/domains/ports/commands,
+[[scripts/session_scribe/prompt_guard.py#PromptInjectionGuard]] blocks jailbreaks/exfil payloads,
+[[scripts/session_scribe/circuit_breaker.py#SubagentCircuitBreaker]] locks offenders until human-token reset,
+[[scripts/session_scribe/redactor.py#SecretRedactor]] masks secrets pre-log, and
+[[scripts/session_scribe/mitre_mapper.py#MitreMapper]] adds MITRE ATT&CK tags and compliance scores.
+[[scripts/session_scribe/subagent.py#PentestSubagent]] enforces [[scripts/session_scribe/subagent.py#AIDisclosure]] via
+[[scripts/session_scribe/audit_logger.py#AuditLogger]] / [[scripts/session_scribe/audit_logger.py#verify_log_chain]];
+[[scripts/session_scribe/forensic_exporter.py#ForensicExporter]] writes Merkle roots, SARIF v2.1.0 and `EVIDENCE_MANIFEST.json`, while
+[[scripts/session_scribe/report_signer.py#sign_report]] and [[scripts/session_scribe/html_dashboard.py#HTMLDashboard]] export signed reports and 4-tab HTML dashboards.
+Tests: [[scripts/session_scribe/tests/test_session_scribe.py]] · Report: [[scripts/session_scribe/REPORT.md]] · Video: https://youtu.be/VFLu1myMy_o.
+
 ## Community and contribution
 
 Contribution flow, coding conventions and the authorization stance.
