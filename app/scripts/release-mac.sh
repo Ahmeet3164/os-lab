@@ -168,6 +168,10 @@ if [ -d "$APP_DIR/widget/build/OSLabWidgets.appex" ]; then
   rm -rf "$APP/Contents/PlugIns/OSLabWidgets.appex" "$APP/Contents/Frameworks/OSLabWidgetReloader.framework"
   cp -R "$APP_DIR/widget/build/OSLabWidgets.appex" "$APP/Contents/PlugIns/"
   cp -R "$APP_DIR/widget/build/OSLabWidgetReloader.framework" "$APP/Contents/Frameworks/"
+  # widget/build.sh runs xcodegen, which regenerates this file from widget/project.yml. Refuse to sign
+  # with an empty one: the extension would ship unsandboxed and macOS would never load the widget.
+  grep -q "com.apple.security.app-sandbox" "$WIDGET_ENTITLEMENTS" && grep -q "group.com.keyvanarasteh.oslab" "$WIDGET_ENTITLEMENTS" \
+    || die "widget entitlements are empty after the build; declare them under entitlements.properties in app/widget/project.yml"
   codesign --force --options runtime --timestamp --entitlements "$WIDGET_ENTITLEMENTS" \
     --sign "$APPLE_SIGNING_IDENTITY" "$APP/Contents/PlugIns/OSLabWidgets.appex" \
     || die "signing the widget extension failed"
