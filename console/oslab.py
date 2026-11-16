@@ -40,7 +40,7 @@ import uuid
 
 # ── Static lab model ─────────────────────────────────────────────────────────
 
-LAB_ORDER = ["android", "windows", "linux", "ios", "macos", "source", "web"]
+LAB_ORDER = ["android", "windows", "winapps", "linux", "ios", "macos", "source", "web"]
 
 LABS = {
     "source": {"label": "Source Lab", "dir": "source-lab", "labctl": "source", "containers": [],
@@ -61,6 +61,13 @@ LABS = {
         "containers": ["win-lab"],
         "disk_default": "64G",
         "summary": "Windows in Docker with KVM, a web desktop, RDP and shared storage.",
+    },
+    "winapps": {
+        "label": "Windows Apps Lab",
+        "dir": "console",  # the lab is console/winapps.py; there is no lab folder of its own
+        "labctl": None,
+        "containers": [],
+        "summary": "Read-only mirror of visible desktop applications on this Windows host.",
     },
     "linux": {
         "label": "Linux Lab",
@@ -1831,6 +1838,8 @@ def provider_for(lab: str, os_name: str) -> str | None:
         return "native-rust" if os_name in ("linux", "macos", "windows") else None
     if lab == "macos":
         return "native-macos" if os_name == "macos" else None
+    if lab == "winapps":
+        return "native-windows" if os_name == "windows" else None
     if os_name == "macos":
         if lab == "ios":
             return "native-macos"
@@ -1865,6 +1874,8 @@ def lab_status(lab: str, host: dict) -> dict:
     if provider is None:
         if lab == "macos":
             reasons.append("macOS application automation needs a Mac.")
+        elif lab == "winapps":
+            reasons.append("The Windows Apps Lab needs a Windows host.")
         else:
             reasons.append("This lab needs a Linux/KVM host (or Windows with WSL2). Use a remote Linux machine.")
         return {"id": lab, "label": meta["label"], "summary": meta["summary"], "state": "unavailable",
@@ -1899,6 +1910,17 @@ def lab_status(lab: str, host: dict) -> dict:
                 notes.append("Appium automation needs Appium and its XCUITest driver; the simulator can run without them.")
             if not idb_ready:
                 notes.append("idb device automation needs the idb companion and client; the simulator can run without them.")
+    elif provider == "native-windows" and lab == "winapps":
+        # The Windows Apps Lab reads the current desktop directly; no VM/container runtime is involved.
+        installed = os.path.isfile(os.path.join(host["root"], "console", "winapps.py"))
+        if not installed:
+            state = "unavailable"
+            reasons.append("The Windows Apps Lab is not installed on this host.")
+        else:
+            state = "ready"
+        return {"id": lab, "label": meta["label"], "summary": meta["summary"], "state": state,
+                "provider": provider, "reasons": reasons, "requirements": reqs, "notes": notes,
+                "actions": [], "installed": installed}
     elif provider == "wsl2":
         distros = host["wsl"]["distributions"]
         reqs += [
