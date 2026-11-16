@@ -177,9 +177,9 @@ half of Q. Where the code differs from the text above:
 - **G**: `docs/legal/**` maps to the legal routes, because those pages render it.
 - **Q**: the `check` job (in `dashboard-e2e`) and a new `unit` workflow
   (`run-tests.sh --changed`) exist. Making them required is a branch-protection change for the
-  maintainer. PR #294 fixed the Android, console and `lat check` baseline failures; the
-  cleanup-engine baseline fixes remain in separate PRs #295, #296 and #297. The `unit` job
-  must pass on this branch before it becomes required.
+  maintainer. PR #294 fixed the Android, console and `lat check` baseline failures;
+  separate PRs #295, #296 and #297 fixed the cleanup-engine baseline and have merged.
+  The `unit` job must pass on this branch before it becomes required.
 - **R**: the hook wrapper goes into the repository's shared `.git/hooks`, so it applies to
   every worktree; an existing different `pre-push` hook is left alone.
 
