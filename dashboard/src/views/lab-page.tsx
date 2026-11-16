@@ -28,6 +28,7 @@ import { Badge, Empty, EndpointList, Field, IconButton, Modal, PageHead, Section
 import { SimulatorDrawer } from "./ios-simulator";
 import { IosDeviceCards } from "./ios-real-devices";
 import { MacAppMirrorTeaser, MacAppPanel } from "./macos-app-mirror";
+import { MacEnginePanel } from "./macos-engine-panel";
 import { WinAppsPanel } from "./winapps-app-mirror";
 import { stateBadge } from "./host-page";
 import {
@@ -589,6 +590,7 @@ function LiveLabPage({ lab: labId }: { lab: LabId }) {
                 <MacAppPanel onPreview={(action, extra) => void preview(action, extra)} onHide={() => setMirrorHidden(true)} />
               ) : null}
               {appMirror && mirrorHidden ? <MacAppMirrorTeaser onOpen={() => setMirrorHidden(false)} /> : null}
+              {appMirror ? <MacEnginePanel /> : null}
 
               {lab.state === "unavailable" ? (
                 <Section title="Run it elsewhere" description={`On a supported host, these commands run from the os-lab checkout (${ref.where}).`}>

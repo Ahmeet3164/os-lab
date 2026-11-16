@@ -32,6 +32,22 @@ ax_helper_state() {
   fi
 }
 
+responsible_app() {
+  # macOS asks for Accessibility/Screen Recording on behalf of the nearest .app ancestor
+  # (Terminal, an IDE, the os-lab app), so the doctor names it instead of "the helper".
+  local pid=$$ line comm i
+  for i in 1 2 3 4 5 6 7 8 9 10 11 12; do
+    line="$(ps -o ppid=,comm= -p "$pid" 2>/dev/null | sed 's/^ *//')"
+    [ -n "$line" ] || return 0
+    comm="${line#* }"
+    case "$comm" in
+      *.app/Contents/*) comm="${comm%%.app/Contents/*}"; echo "${comm##*/}.app"; return 0 ;;
+    esac
+    pid="${line%% *}"
+    [ "$pid" -gt 1 ] 2>/dev/null || return 0
+  done
+}
+
 ok()   { printf '  [ok]   %s\n' "$*"; }
 warn() { printf '  [warn] %s\n' "$*"; }
 bad()  { printf '  [FAIL] %s\n' "$*"; FAIL=1; }
@@ -90,6 +106,19 @@ case "$ACTION" in
     MEM_GB=$(( $(sysctl -n hw.memsize) / 1024 / 1024 / 1024 ))
     if [ "$MEM_GB" -lt 8 ]; then warn "memory: ${MEM_GB} GB (8 GB+ recommended for mac2 sessions)"; else ok "memory: ${MEM_GB} GB"; fi
     ok "disk free: $(df -h "$LAB_DIR" | awk 'NR==2 {print $4}')"
+
+    say "permissions"
+    RESP="$(responsible_app)"
+    ok "grants belong to: ${RESP:-the app that launched this shell}"
+    if [ -x "$AX_HELPER_BIN" ]; then
+      if "$AX_HELPER_BIN" trusted 2>/dev/null | grep -q '"trusted":true'; then
+        ok "Accessibility: granted"
+      else
+        warn "Accessibility: not granted; enable ${RESP:-the launching app} in System Settings > Privacy & Security > Accessibility (or use Request access in the macOS Lab page)"
+      fi
+    else
+      warn "Accessibility: unknown until the AX helper is built"
+    fi
 
     say "displays"
     if command -v python3 >/dev/null 2>&1; then
