@@ -318,7 +318,8 @@ catalog's never-preselect risk classes with per-entry reasons. Quick clean
 confirm → run flow. `run_hook_clean()` in the console executes the
 automated clean inside the monitor thread when a free-space crossing fires:
 engine-ready and no-overlap guards, Trash-only, audited with
-`automated: true`, announced by a post-run banner. The `bookmark-size`
+`automated: true`, announced by a post-run banner. The job reports `done`
+only after the bookmark's last-run timestamp has been saved. The `bookmark-size`
 trigger measures alerted bookmarks with a read-only entry-scoped scan and
 folds its events into the monitor store. `labctl cleanup bookmarks` lists
 them read-only.
