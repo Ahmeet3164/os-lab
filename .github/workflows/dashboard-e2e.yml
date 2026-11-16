@@ -11,6 +11,12 @@ on:
       - 'dashboard/**'
       - '.github/workflows/dashboard-e2e.yml'
 
+# Plan item M: a newer push to the same PR cancels the older run. Pushes to master,
+# tags and manual runs are never cancelled.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   browser:
     runs-on: ubuntu-22.04
