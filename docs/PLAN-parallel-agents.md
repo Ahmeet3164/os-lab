@@ -15,6 +15,7 @@ branch hit the same conflicts when it rebased at the end.
 | Agents killed each other's runs | An agent ran `pkill -9` on Chromium and on the port-4322 server | Processes were killed by name, not by PID |
 | Conflicts on every rebase | `dashboard/dist` and all 7 locale files conflict on every branch | `dist` is committed and every build rewrites hundreds of hashed files; every feature appends keys at the end of the same locale files |
 | Shared files rewritten | `app-shell.tsx` conflicted with the new `winapps` lab (#287) | Nav, Spotlight and lab lists all live in one file |
+| Master's CI is red | `dashboard-e2e` failed on the last 5 runs; on master (run 43888450653) 22 failed and 66 passed in 22.1 min, all in `health-and-content.spec.ts`, mostly 30 s click timeouts, plus a strict-mode clash on the `Window` label after #289 | Nobody can tell a new failure from an old one, so every agent has to run the full suite locally to compare |
 | Task ID collision | CLN-30 was taken by another branch in progress | IDs were chosen without checking existing branches and `reservations/` |
 
 ## Phase 0: rules that apply now
@@ -32,7 +33,8 @@ branch hit the same conflicts when it rebased at the end.
 
 ## Phase 1: land the work in progress, one branch at a time
 
-- [ ] `feat/lab-switcher-modal`: complete; needs one clean e2e run.
+- [ ] **First, make master's `dashboard-e2e` green.** Until it passes, CI cannot tell whether a PR broke anything. The "ghost dialog" CSS fix in #292 may cover the click timeouts; the `Window` label clash from #289 needs its own fix. Once master is green, a green CI run replaces the local full-suite run in the landing steps.
+- [ ] `feat/lab-switcher-modal`: PR #292 open, conflicts with master after #289, CI not run yet.
 - [ ] `feat/local-notifications`: finish the `lib.rs`/`console.rs` wiring, `cargo test` and `cargo build`, the docs and `reservations/CLN-33.json`, then land it.
 - [ ] `feat/in-app-feedback-telemetry`: complete; needs the full e2e comparison with master. Merge only after the user approves.
 
@@ -41,8 +43,8 @@ branch hit the same conflicts when it rebased at the end.
 1. Commit the source changes, without `dashboard/dist`.
 2. `git fetch origin && git rebase origin/master`, using the conflict rules below.
 3. In `dashboard/`: `npm run check` and `npm run test:i18n`; at the repo root: `lat check`. Run the Python and Rust tests for the parts you changed. Compare every failure against a clean `origin/master` worktree and list the ones that already happen there.
-4. `npm run build`, then commit `dashboard/dist` as a separate last commit: `build: regenerate dashboard dist`.
-5. Run your specs, then the full e2e suite once, on your own port with `--workers=2`. Compare any failure with master.
+4. Until item D lands: `npm run build`, then commit `dashboard/dist` as a separate last commit: `build: regenerate dashboard dist`. After item D lands, skip this step: feature PRs never touch `dist`.
+5. Run your specs on your own port with `--workers=2`. Once master's CI is green, the CI run on the PR is the full-suite check; until then, run the full suite once locally and compare any failure with master.
 6. `git fetch origin`. If `origin/master` moved since step 2, go back to step 2.
 7. Push and open the PR against `master` with the test results and the failures that already exist on master. Wait for CI.
 8. `gh pr merge <N> --merge --delete-branch`, after the user approves when they asked to approve.
@@ -82,7 +84,14 @@ branch hit the same conflicts when it rebased at the end.
 
   Each argument also has an `OSLAB_E2E_*` environment variable, read by `playwright.config.ts`, so a plain `npx playwright test` follows the same defaults.
 - [ ] **C. Locale conflicts.** Stop every feature from appending keys to the end of the same files. Preferred: one dictionary file per feature, merged at build time, with `scripts/check-translations.mjs` updated to match. Smaller option: sort the keys in every locale file once and enforce the order in `test:i18n`. The PR explains the choice.
-- [ ] **D. `dist` in reviews.** Mark `dashboard/dist/**` as `linguist-generated -diff` in `.gitattributes` so it stays out of review diffs. Optional for later: build `dist` in CI or at release time and stop committing it.
+- [ ] **D. Build `dist` on merge, not in feature commits.** `dist` stays committed on master, because `./labctl ui` serves it on hosts without Node. Feature branches stop building it:
+  - A check in `dashboard-e2e.yml` fails a PR that changes `dashboard/dist/**`. CI already builds `dist` itself before the tests, so PRs are tested the same way.
+  - A new `dashboard-dist.yml` runs on push to master when `dashboard/**` changes: `npm ci`, `npm run build`, and when `dist` differs, a `build: regenerate dashboard dist` change. It uses a `concurrency` group without cancelling, so when two PRs merge close together the second run rebuilds from the latest master.
+  - Master's branch protection requires a PR and applies to admins, so the workflow cannot push directly. It opens a `build/dist-<sha>` PR and enables auto-merge, or the maintainer adds a ruleset bypass for the workflow's app. The PR route needs no permission change.
+  - `scripts/run-tests.sh` stage 5 warns about a stale `dist` on feature branches and still fails on master.
+  - `app/scripts/stage-runtime.mjs` builds or verifies `dist` before staging, so a release never ships a stale dashboard.
+  - Mark `dashboard/dist/**` as `linguist-generated -diff` in `.gitattributes`.
+  - Accepted cost: for a few minutes after each merge, master's `dist` is one merge behind its source.
 - [ ] **E. Shared registries (optional).** Move per-lab nav and Spotlight entries out of `app-shell.tsx` into one small file per lab, so new labs stop conflicting there.
 - [ ] **F. Screenshots and crawl.** `--screenshots` and `--trace` map to Playwright's `use.screenshot` and `use.trace`. `--crawl` runs a crawl spec that visits the selected routes in the selected locales and widths, saves one full-page PNG each, and writes an HTML report to review layout changes. By default it crawls only the routes the change touches, in English at desktop width. `--locales all --widths desktop,phone` is the full set (about 30 routes × 8 locales × 2 widths, about 500 images), which runs only with the lock. Output stays git-ignored.
 - [ ] **G. Change-to-test map.** `dashboard/e2e/affected.json` maps source paths to the specs and routes that cover them. Examples: `src/views/cleanup/**` → `cleanup*.spec.ts` and `/cleanup/`; `src/views/feedback-page.tsx` and `src/views/settings-page.tsx` → `feedback-settings.spec.ts` and `/feedback/`, `/settings/`; `src/i18n/generated/**` → the routes that use the changed keys, in the changed locales. Shared files (`src/shell/**`, `src/components/ui.tsx`, `src/styles/**`, `astro.config.mjs`) map to a smoke subset (the hydration test plus one spec per area), not the whole suite. A test checks that every spec appears in the map, so new specs cannot be left out.
@@ -149,6 +158,7 @@ not depend on the course calendar. Do this after Phase 3, in its own PR.
 - [ ] Two worktrees build the dashboard at the same time without touching each other's Vite cache or `dist`.
 - [ ] A reservation older than 21 days with no PR shows as available on the Contribute page.
 - [ ] With `OSLAB_CACHE_ROOT` set to an external volume, nothing new is written under `~/.cache`, `~/.npm` or `~/Library/Caches` by the os-lab scripts.
+- [ ] A PR that changes `dashboard/dist/**` fails CI; a merged dashboard change gets its `dist` rebuilt and merged within one workflow run.
 - [ ] `npm run check`, `npm run test:i18n`, `npm run build` and `lat check` pass.
 
 ## Appendix: session reports from 2026-11-16
