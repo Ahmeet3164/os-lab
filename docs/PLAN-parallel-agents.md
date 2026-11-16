@@ -35,8 +35,8 @@ branch hit the same conflicts when it rebased at the end.
 
 ## Phase 1: land the work in progress, one branch at a time
 
-- [ ] **First, make master's `dashboard-e2e` green.** Until it passes, CI cannot tell whether a PR broke anything. The "ghost dialog" CSS fix in #292 may cover the click timeouts; the `Window` label clash from #289 needs its own fix. Once master is green, a green CI run replaces the local full-suite run in the landing steps.
-- [ ] `feat/lab-switcher-modal`: PR #292 open, conflicts with master after #289, CI not run yet.
+- [x] **First, make master's `dashboard-e2e` green.** PR #294 fixed the content-dialog and `Window` locator failures; the first master run after its merge passed.
+- [x] `feat/lab-switcher-modal`: PR #292 merged.
 - [ ] `feat/local-notifications`: finish the `lib.rs`/`console.rs` wiring, `cargo test` and `cargo build`, the docs and `reservations/CLN-33.json`, then land it.
 - [ ] `feat/in-app-feedback-telemetry`: complete; needs the full e2e comparison with master. Merge only after the user approves.
 
@@ -177,10 +177,9 @@ half of Q. Where the code differs from the text above:
 - **G**: `docs/legal/**` maps to the legal routes, because those pages render it.
 - **Q**: the `check` job (in `dashboard-e2e`) and a new `unit` workflow
   (`run-tests.sh --changed`) exist. Making them required is a branch-protection change for the
-  maintainer, after master is green: on Linux, master already fails 18 android tests
-  (`test_winapps.py`, `test_oslab_console.py`), 11 cleanup-engine tests (`test_relocation.py`,
-  `test_explorer.py`, `test_safety.py`) and `lat check` (two leading paragraphs too long in
-  `dashboard.md` and `win-lab.md`). This branch has the same results.
+  maintainer. PR #294 fixed the Android, console and `lat check` baseline failures; the
+  cleanup-engine baseline fixes remain in separate PRs #295, #296 and #297. The `unit` job
+  must pass on this branch before it becomes required.
 - **R**: the hook wrapper goes into the repository's shared `.git/hooks`, so it applies to
   every worktree; an existing different `pre-push` hook is left alone.
 
