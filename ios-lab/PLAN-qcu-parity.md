@@ -27,41 +27,41 @@ panic stop), MCP server and `macos_task`.
 
 ### Safety and protocol
 
-- [ ] **Named arm owner and handoff.** QcU: a second owner gets
+- [x] **Named arm owner and handoff.** QcU: a second owner gets
       `ARMED_BY_OTHER`. os-lab: `INPUT_BUSY` only. Decide whether to add the
       owner name to the refusal.
-- [ ] **Capability handshake.** QcU `qcu.capabilities` tells a client what the
+- [x] **Capability handshake.** QcU `qcu.capabilities` tells a client what the
       driver supports (deep sessions, set-value, …). os-lab has no mac
       equivalent *(verify)*.
-- [ ] **`element.search`.** Find elements by label/value substring (max 50) so
+- [x] **`element.search`.** Find elements by label/value substring (max 50) so
       agents do not read the whole tree. Also a `find` in the REPL.
-- [ ] **`displays.list` as an API.** Today displays are only printed by
+- [x] **`displays.list` as an API.** Today displays are only printed by
       `macos-app.sh doctor`; expose origin, size and scale as JSON (MIR-03 data).
 
 ### Observation stream
 
-- [ ] **Live SSE audit feed** (`GET …/events`, heartbeat 15 s). os-lab has the
+- [x] **Live SSE audit feed** (`GET …/events`, heartbeat 15 s). os-lab has the
       list route and a JSON download only. The audit panel could update live.
 
 ### Setup and permissions
 
-- [ ] **Accessibility prompt.** QcU fires the consent dialog through the helper
+- [x] **Accessibility prompt.** QcU fires the consent dialog through the helper
       (`qcu setup`) and deep-links the Screen Recording pane. os-lab shows the
       status only *(verify)*; add a "Request access" action that stays previewed.
-- [ ] **Doctor names the app that needs the permission** (`responsible-app.ts`:
+- [x] **Doctor names the app that needs the permission** (`responsible-app.ts`:
       the Terminal/IDE that launched the helper, not "the helper").
-- [ ] **One-step bootstrap.** QcU `QcU.command` / `install.sh` / idempotent
+- [x] **One-step bootstrap.** QcU `QcU.command` / `install.sh` / idempotent
       `qcu setup` build the helper automatically; os-lab asks the user to press
       "Build AX helper". Fold into `setup-mac.sh` and `mac-doctor`.
-- [ ] **One config file with precedence** (env > file > defaults). os-lab has
+- [x] **One config file with precedence** (env > file > defaults). os-lab has
       `agent-apps.json` and env vars only.
 
 ### Architecture and testing
 
-- [ ] **Driver seam with a fake driver.** QcU runs 43 tests with no Mac. os-lab's
+- [x] **Driver seam with a fake driver.** QcU runs 43 tests with no Mac. os-lab's
       mac tests patch helpers; a small fake would let CI cover the act/verify
       paths on Linux.
-- [ ] **Deep inspect without Appium.** QcU identifies elements natively (window +
+- [ ] **Deep inspect without Appium** *(decision, not code).* QcU identifies elements natively (window +
       path + revision). os-lab deep-inspect and the REPL still need Appium mac2
       (MIR-05); decide whether to keep both.
 
@@ -71,6 +71,18 @@ panic stop), MCP server and `macos_task`.
   (`QcUClient`). These are QcU's product; os-lab should call QcU if it ever
   needs them, not copy them.
 - A local status page. The dashboard already serves this.
+
+## Implemented on this branch
+
+All checked items above, with these shapes: `GET /api/labs/macos/{displays,capabilities,permissions,events}`,
+`GET …/apps/<id>/search?q=`, `POST …/permission/request` (consent only: fires the
+dialog or opens the pane; not part of the preview pipeline), MCP `macos_search` /
+`macos_displays` / `macos_capabilities` / `macos_permissions` (still no arm tool),
+`ARMED_BY_OTHER`, `ios-lab/mac/mac-lab.json` (env > file > defaults, clamped),
+`OSLAB_AX_HELPER` + `ios-lab/mac/fake-ax-helper.py`, `make mac-setup` building
+the helper, and `android-lab/lab/tests/test_macos_parity.py` (13 tests, Linux-safe).
+Not done: dashboard UI for the new endpoints, and the Appium decision above.
+Nothing here was exercised against a real input grant on a Mac.
 
 ## Caveats
 
