@@ -229,7 +229,9 @@ entry id and a destination volume from CLN-28's inventory (`GET
 `<volume>/oslab-caches/<entry id>`, the pair passes `safety.validate_copy`, the
 owning application must not be running, and there is no elevated fallback. An
 interrupted move is flagged in the status and continued by a typed resume that
-re-verifies the store copy before touching the aside. `POST
+re-verifies the store copy before touching the aside. A resume after a verified
+copy can continue before the rename; an existing aside path is never replaced.
+`POST
 /api/cleanup/relocation/plan` and `POST /api/cleanup/relocation/run` follow the
 typed preview → single-use job pattern and are audited.
 
