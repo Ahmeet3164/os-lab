@@ -60,6 +60,7 @@ branch hit the same conflicts when it rebased at the end.
 - [ ] **C. Locale conflicts.** Stop every feature from appending keys to the end of the same files. Preferred: one dictionary file per feature, merged at build time, with `scripts/check-translations.mjs` updated to match. Smaller option: sort the keys in every locale file once and enforce the order in `test:i18n`. The PR explains the choice.
 - [ ] **D. `dist` in reviews.** Mark `dashboard/dist/**` as `linguist-generated -diff` in `.gitattributes` so it stays out of review diffs. Optional for later: build `dist` in CI or at release time and stop committing it.
 - [ ] **E. Shared registries (optional).** Move per-lab nav and Spotlight entries out of `app-shell.tsx` into one small file per lab, so new labs stop conflicting there.
+- [ ] **F. Screenshots from e2e runs.** `scripts/e2e.sh --screenshots` sets `OSLAB_E2E_SCREENSHOTS`, which `playwright.config.ts` maps to `use.screenshot` (`only-on-failure` by default, `on` for every test). Failed tests keep their trace (DOM snapshots and screenshots, already `retain-on-failure`). `scripts/e2e.sh --crawl` runs a crawl spec that visits every local route in all eight locales at desktop and phone widths and saves a full-page PNG per route, plus an HTML report to review layout changes. Output goes under `dashboard/test-results/<run-id>/`, which stays git-ignored. Videos stay off because they cost too much CPU.
 
 ## Phase 3: documentation (same PR as Phase 2)
 
@@ -74,4 +75,77 @@ branch hit the same conflicts when it rebased at the end.
 - [ ] Two worktrees run single specs at the same time on different ports, and neither sees the other's build.
 - [ ] A full suite run with two workers keeps the load average below the number of CPU cores.
 - [ ] A test branch that adds locale keys rebases onto a master that also added keys, without a locale conflict.
+- [ ] `scripts/e2e.sh --screenshots e2e/<spec>` and `scripts/e2e.sh --crawl` save PNGs under the run folder, and a failed test keeps its screenshot and trace.
 - [ ] `npm run check`, `npm run test:i18n`, `npm run build` and `lat check` pass.
+
+## Appendix: session reports from 2026-11-16
+
+These are the three session reports behind this plan. Times are marked
+**measured** (from a log, a commit, a test runner or a command timeout) or
+**estimated**, as each session reported them.
+
+### Lab-switcher session (`feat/lab-switcher-modal`)
+
+Task: lab switcher modal (⌘L), focused sidebar nav, sidebar action card and a
+collapsible "How to use". Status: implemented and rebased; e2e blocked by the
+environment; no PR yet.
+
+| # | Step | Time | Result |
+|---|---|---|---|
+| 1 | Explore shell, Spotlight, api, i18n, e2e | ~16:10–16:25 (estimated) | Found the `iux-dialog` modal pattern, `client:only` islands, the i18n baseline rule |
+| 2 | Create worktree `os-lab-worktrees/lab-switcher`, branch, symlink `node_modules` | ~16:25 | Hit the 120 s foreground timeout, finished in the background (exit 0); about 2 min on a slow external volume |
+| 3 | Implement `active-lab.ts`, `lab-switcher.tsx`, `app-shell.tsx` rewrite, CSS, 8 locale files, e2e specs, docs | ~16:30–17:00 (estimated) | Done |
+| 4 | `npm run check`, `test:i18n`, `build` before rebase | 17:06:45 (measured, build log) | Pass; 531 pages |
+| 5 | `lat check` | 988 ms (measured) | Pass |
+| 6 | First e2e run, before rebase | by ~17:32 (estimated) | All pass |
+| 7 | Commit `fa02e4cf5`, `git rebase origin/master` | 17:24:10 (measured) | 1 conflict in `app-shell.tsx` with the new `winapps` lab (#287); `lat.md/dashboard.md` auto-merged |
+| 8 | `check`, `test:i18n`, `build` after rebase | 17:25:25 (measured) | Pass; 2742 keys; 532 pages |
+| 9 | E2e run B, default workers | 17:33–17:47 (estimated) | Load average 24.37 and 65 Chromium processes (measured); killed |
+| 10 | E2e run C, `--workers=4` | started 17:47 (measured) | Port-4322 server died mid-run: `ERR_CONNECTION_REFUSED`, 4× "Channel closed", 28 environmental failures |
+
+The session's own notes: run B was started with default workers (its
+mistake); run C most likely raced with run B's dying server on the same port;
+master's e2e was never run for comparison.
+
+### Notifications session (`feat/local-notifications`)
+
+Task: local notifications on every desktop platform (OS delivery, permission
+status, in-app toast stack), wired to Cleanup Lab's lifecycle hooks. Status:
+about 60%; Tauri module not wired; no commits.
+
+| # | Step | Time | Result |
+|---|---|---|---|
+| 1 | Worktree `.worktrees/local-notifications` from `origin/master` `ab713f146` | ~16:0x (measured) | Done |
+| 2 | Read conventions (`monitor.py`, `widget.py`, `cleanup_api.py`, `test_monitor.py`) | ~10 min (estimated) | Done |
+| 3 | Engine `notifications.py` and 11 unit tests | ~20 min (estimated) | 11/11 pass in 0.122 s (measured) |
+| 4 | Console hooks and 4 endpoints in `cleanup_api.py`, smoke scripts | ~25 min (estimated) | Pass |
+| 5 | Dashboard types, store, toasts, settings card, 14 strings × 7 locales, e2e spec | ~50 min (estimated) | Done |
+| 6 | `astro sync`, `npm run check`, `test:i18n`, `build` | 17:14 (measured) | Pass; 2743 keys; 531 pages in 20.47 s |
+| 7 | Playwright browser download and e2e (install plus 5 runs) | 17:17–17:35 (measured) | One test passed once, then browser launches hung |
+| 8 | Cargo dependency, `cargo fetch`, `notifications.rs` | ~17:40–17:55 (estimated) | Written, not compiled; `cargo fetch` took over 3 min under load |
+| 9 | `lib.rs` wiring | — | Edit rejected (file not read first); pending |
+
+The session's own notes:
+- About 25 minutes were partly wasted. No Playwright browsers were installed. The first run left a stale `http.server` on port 4322 that broke the next one. Three of its own test bugs needed fixes. Later runs hung at "setting up page" with the load average at 24, while Antigravity used 87% CPU.
+- It used `pkill -9` on Chromium and the port-4322 server, which affects every session's runs.
+- The task ID CLN-30 was already taken by `feat/cln-30-engine` (and CLN-31 and CLN-32 were in use), so it switched to CLN-33.
+
+### Feedback and telemetry session (`feat/in-app-feedback-telemetry`, Linux host)
+
+Task: in-app feedback and contact forms plus opt-in telemetry, with core-api
+PR #13 making the feedback list admin-only. About 36 minutes until the pause; all
+times are estimated, because the session cannot see clock times.
+
+| Step | Time | Why |
+|---|---|---|
+| First e2e attempt | ~10 min | Output piped through `head -30`, so the run looked frozen and sat until the 600 s timeout |
+| Full e2e suite, started three times | ~5–8 min | `git stash` in the same checkout swapped `dashboard/dist` under a running suite, twice |
+| Python suite, 4–5 runs | ~4 min | ~45 s each, to show 19 failures also happen on master (local `.env` value `root` caused one) |
+| Reading both codebases | ~6–8 min | About 30 small reads, one at a time |
+| Writing code and 53 strings × 7 locales | ~5 min | Large outputs |
+| Builds and Pages checks | ~3 min | Astro build ~15 s × 4, Pages dry-run and two smoke scripts ~2 min |
+| core-api PR #13 | ~4 min | CI `coverage` job fails in 3 s with no logs |
+| Playwright browser path | ~1 min | The sandbox cache path pointed away from the installed browsers |
+
+About 15 minutes of the 36 were process mistakes; the work itself needed
+roughly 20.
