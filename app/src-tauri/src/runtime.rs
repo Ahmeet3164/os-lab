@@ -113,16 +113,22 @@ pub fn sync_tree(src: &Path, dst: &Path) -> io::Result<usize> {
     sync_tree_reporting(src, dst, &mut || {})
 }
 
-/// How many files `sync_tree` will visit, so the launcher can show "N of M". Symlinks are not
-/// followed, and unreadable folders count as empty: this is a progress estimate, not a contract.
-pub fn count_files(src: &Path) -> usize {
+/// How many files `sync_tree` will visit, so the launcher can show "N of M". Symlinks and
+/// existing private paths are skipped, just as they are during the copy.
+fn count_files(src: &Path, dst: &Path) -> usize {
     let Ok(entries) = fs::read_dir(src) else { return 0 };
     entries
         .flatten()
-        .map(|entry| match entry.file_type() {
-            Ok(kind) if kind.is_dir() => count_files(&entry.path()),
-            Ok(kind) if kind.is_file() => 1,
-            _ => 0,
+        .map(|entry| {
+            let target = dst.join(entry.file_name());
+            if kept(&entry.file_name().to_string_lossy()) && target.exists() {
+                return 0;
+            }
+            match entry.file_type() {
+                Ok(kind) if kind.is_dir() => count_files(&entry.path(), &target),
+                Ok(kind) if kind.is_file() => 1,
+                _ => 0,
+            }
         })
         .sum()
 }
@@ -146,7 +152,6 @@ pub fn sync_tree_reporting(src: &Path, dst: &Path, visited: &mut dyn FnMut()) ->
         if kind.is_dir() {
             copied += sync_tree_reporting(&entry.path(), &target, visited)?;
         } else if kind.is_file() {
-            visited();
             let same = match (fs::metadata(entry.path()), fs::metadata(&target)) {
                 (Ok(a), Ok(b)) => a.len() == b.len() && fs::read(entry.path())? == fs::read(&target)?,
                 _ => false,
@@ -165,6 +170,7 @@ pub fn sync_tree_reporting(src: &Path, dst: &Path, visited: &mut dyn FnMut()) ->
                 }
                 copied += 1;
             }
+            visited();
         }
     }
     Ok(copied)
@@ -245,7 +251,7 @@ pub fn sync_bundle_reporting(
         return Ok(0);
     }
     replace_dashboard(&data_root.join("dashboard").join("dist"))?;
-    let total = count_files(bundle);
+    let total = count_files(bundle, data_root);
     let mut done = 0;
     report(SyncProgress { phase: SyncPhase::Copy, done, total });
     let copied = sync_tree_reporting(bundle, data_root, &mut || {
@@ -335,11 +341,18 @@ mod tests {
         assert_eq!(seen.first().unwrap().phase, SyncPhase::Check);
         let last = seen.last().unwrap();
         assert_eq!(last.phase, SyncPhase::Copy);
-        assert!(last.done > 0 && last.done <= last.total, "{last:?}");
+        assert!(last.done > 0 && last.done == last.total, "{last:?}");
         assert!(seen.windows(2).all(|w| w[0].done <= w[1].done));
+        fs::write(bundle.join("android-lab/lab/.env"), "bundled").unwrap();
+        fs::write(data.join("android-lab/lab/.env"), "personal").unwrap();
+        let mut updated = Vec::new();
+        sync_bundle_reporting(&bundle, &data, "2", &mut |p| updated.push(p)).unwrap();
+        let last = updated.last().unwrap();
+        assert_eq!(last.done, last.total, "{last:?}");
+        assert_eq!(fs::read_to_string(data.join("android-lab/lab/.env")).unwrap(), "personal");
         // An up-to-date start has nothing to copy, so it never reports a copy.
         let mut again = Vec::new();
-        sync_bundle_reporting(&bundle, &data, "1", &mut |p| again.push(p)).unwrap();
+        sync_bundle_reporting(&bundle, &data, "2", &mut |p| again.push(p)).unwrap();
         assert!(again.iter().all(|p| p.phase == SyncPhase::Check));
     }
 
