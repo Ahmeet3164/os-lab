@@ -446,6 +446,7 @@ test("Android run failures are shown next to the action", async ({ page }) => {
 });
 
 test("every local page type hydrates without a browser error", async ({ page }) => {
+  test.setTimeout(90_000); // This test navigates through 25 built pages.
   await mockApi(page);
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
