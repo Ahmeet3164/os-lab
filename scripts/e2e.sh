@@ -43,6 +43,8 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DASH="$ROOT/dashboard"
+# shellcheck source=lib/cache-env.sh
+. "$ROOT/scripts/lib/cache-env.sh"
 
 usage() { sed -n '2,/^set -euo/p' "$0" | sed '$d' | sed 's/^# \{0,1\}//'; }
 die() { echo "e2e.sh: $*" >&2; exit 2; }

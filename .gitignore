@@ -47,7 +47,7 @@ __pycache__/
 .venv/
 .pytest_cache/
 lat.md/.cache/
-.venv-test/
+.venv-test
 
 # Private, off-the-record local notes (never committed)
 *.local.md
@@ -83,3 +83,9 @@ hedef
 
 # Web Lab engine build artifacts (web-lab/browser)
 web-lab/browser/target/
+
+# Stage timings written by scripts/run-tests.sh (plan item S)
+/test-results/
+
+# Written by scripts/worktree.sh: cache settings and the .venv-test link (plan item I)
+.oslab-env
