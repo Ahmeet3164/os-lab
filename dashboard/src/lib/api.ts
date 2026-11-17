@@ -394,11 +394,14 @@ export interface CleanupStatus {
 export interface CleanupEntry {
   id: string; name: string; category: string; risk: string; hint: string; impact: string;
   defaultSelected: boolean; needsPrivilege: boolean;
+  /** False for measured-only entries (toolchains, agent data): a plan skips them. Absent on older consoles. */
+  cleanable?: boolean; family?: string;
   paths: { template: string; path: string | null; reason: string; source?: string }[];
 }
 export interface CleanupScan {
   cancelled: boolean;
-  entries: { id: string; name: string; category: string; risk: string; sizeBytes: number; files: number; folders: number; unreadable: string[]; paths: { path: string | null; reason: string; source?: string; sizeBytes: number; error: string | null }[] }[];
+  /** modifiedAt: newest file mtime in epoch seconds; absent on older consoles. */
+  entries: { id: string; name: string; category: string; risk: string; sizeBytes: number; files: number; folders: number; unreadable: string[]; modifiedAt?: number | null; paths: { path: string | null; reason: string; source?: string; sizeBytes: number; error: string | null; modifiedAt?: number | null }[] }[];
   totals: { sizeBytes: number; files: number; folders: number; unreadable: number };
 }
 export interface CleanupPlan {
@@ -676,6 +679,10 @@ export const api = {
   cleanupPermissions: () => call<CleanupPermissions>("/api/cleanup/permissions"),
   /** The grant round-trip: name a permission, the console opens System Settings. */
   cleanupPermissionsOpen: (permissionId: string) => post<{ permissionId: string; opened: string }>("/api/cleanup/permissions/open-settings", { permissionId }),
+  /** The app bundle the console runs under: the one that needs Full Disk Access. */
+  cleanupHostApp: () => call<{ app: { path: string; name: string; bundleId: string | null } | null }>("/api/cleanup/permissions/host-app"),
+  cleanupRevealApp: () => post<{ revealed: string }>("/api/cleanup/permissions/reveal-app", {}),
+  cleanupResetPermission: () => post<{ reset: string }>("/api/cleanup/permissions/reset", {}),
   cleanupMonitor: () => call<CleanupMonitorStatus>("/api/cleanup/monitor"),
   cleanupMonitorConfig: (config: CleanupMonitorConfig) => post<CleanupMonitorStatus>("/api/cleanup/monitor/config", config),
   cleanupMonitorEvaluate: () => post<CleanupMonitorStatus>("/api/cleanup/monitor/evaluate"),

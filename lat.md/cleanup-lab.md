@@ -40,6 +40,11 @@ pre-selected; every browser names its owning process for the running-app guard.
 CLN-06 adds [[cleanup-lab/catalog/developers.json]] with per-OS developer cache
 defaults, credentials and toolchains.
 
+A real disk review added `uv`, VS Code extensions, `rembg`, Codex runtimes, the whole GOPATH and Cargo home,
+the shared os-lab cache, Homebrew's Cellar and system crash reports, plus an `agents` family
+([[cleanup-lab/catalog/agents.json]]) for AI agent data. Agent, toolchain and workspace entries are
+`cleanable: false` and the Cellar is measured only, so a plan skips them and Homebrew packages go through `brew uninstall`.
+
 The catalog reports binary presence through `shutil.which` without a shell.
 Shell functions are tracked by their directories. Credential entries are never
 pre-selected; toolchains and local clusters have `cleanable: false` and the
@@ -192,7 +197,11 @@ and pseudo filesystems are filtered before any capacity call; Windows
 enumerates drives through kernel32, Linux reads `/proc/self/mountinfo`, and
 macOS parses the fixed `mount` probe plus an optional fixed `diskutil info
 -plist` probe. An unreadable volume carries an `error` instead of failing the
-probe. The `/cleanup/` volumes card is the dashboard layer's part.
+probe. The `/cleanup/` volumes card is the dashboard layer's part: the storage card shows the
+home volume as the hero, and the other volumes as a closed "Other volumes" section of display-only
+cards (name, mount path, used/free bar, sizes, kind) grouped into Disks (open), System,
+Simulators and devices, and Temporary. Mounts reporting the same device collapse into one card
+that lists its mount points ([[dashboard/src/views/cleanup/volume-cards.tsx]]).
 
 ## Privileged actions
 
@@ -451,6 +460,11 @@ behavior; the shared tab row renders on the Settings and detail pages, the
 local main page reaches Settings through the page-head action, and Public
 Pages keeps the full tab row without engine calls.
 
+The Advanced scan page keeps its Defaults / All / None, sort, "Scan selected",
+Cancel and progress in one sticky toolbar under the page top bar, with the
+selected measured size beside the count, so a scan starts without scrolling
+past the 68-entry grid.
+
 Its confirmation opens the shared native dialog (focus containment,
 Escape/backdrop close, focus return) that lists ready items with sizes and
 skipped items with their reasons.
@@ -480,6 +494,16 @@ the default.
 The local app polls only while a job runs. Public Pages renders the routes without
 engine calls or destructive controls. All eight route sets are built, including
 the seven translated locales.
+
+### Scan card and Catalogs
+
+The dashboard scan card ([[dashboard/src/views/cleanup/scan-card.tsx]]) shows "Scanning your Mac" with the category being measured, percent, bar, current path and Stop while a scan runs. When it finishes it shows "Scan complete", the selected size, a Clean action and the plan by tool group.
+
+[[dashboard/src/views/cleanup/groups.ts]] classifies every catalog entry into a tool group by id. [[dashboard/src/views/cleanup/catalog-page.tsx]] is `/cleanup/catalog/`: the group list, and with `#<group>` that group's own view (search, Size and Modified filters, sort including oldest first, select, bookmark, Rescan). Modified is the newest file time under each entry, which the scan reports as `modifiedAt` per path and per entry. Review removal sends the selection to the existing plan and confirmation dialog; nothing is cleaned without it. The sidebar has a Catalogs group with one entry per tool group. [[dashboard/src/views/cleanup/group-icon.tsx]] gives each group one icon and tint, used in the sidebar, the plan rows and the group header, and carries the per-group measured bytes from the page to the sidebar badges through `localStorage` and a window event.
+
+The Permissions card in Settings opens with the Full Disk Access guide ([[dashboard/src/views/cleanup/permission-guide.tsx]]): the app that needs the grant as a tile, Open System Settings, Reveal app again, Reset permissions and, once the toggle is on, Quit & Reopen. The console names the app from its own process tree (`_host_app` in [[console/cleanup_api.py]]) and reveals or resets only that bundle; the page supplies no path.
+
+In the desktop app the tile drags natively and Quit & Reopen relaunches. Both are two narrow commands (`app_drag_self`, `app_relaunch`) granted to the local dashboard origin by `app/src-tauri/capabilities/dashboard-grant.json`; the drag path is always the app's own bundle. The guide draws the Full Disk Access list with this app's row off and re-probes every 3 s on the Settings page. When the grant appears it shows "You're ready"; in the desktop app it relaunches after a 5 s countdown the user can stop, since a running process may not see its own fresh grant. In a browser the tile falls back to Reveal in Finder and the user reopens the app that started the console.
 
 ## Console API
 
