@@ -2837,5 +2837,10 @@
   "Stopping macOS Lab control…": "Deteniendo el control del laboratorio macOS…",
   "macOS Lab control stopped.": "Se detuvo el control del laboratorio macOS.",
   "Could not stop macOS Lab control:": "No se pudo detener el control del laboratorio macOS:",
-  "Submission review opened. Select a Terminal or VM window to inspect and capture evidence. Control actions still require confirmation or armed mode.": "Se abrió la revisión de la entrega. Selecciona una ventana de Terminal o de máquina virtual para inspeccionarla y capturar pruebas. Las acciones de control siguen requiriendo confirmación o el modo de control activado."
+  "Submission review opened. Select a Terminal or VM window to inspect and capture evidence. Control actions still require confirmation or armed mode.": "Se abrió la revisión de la entrega. Selecciona una ventana de Terminal o de máquina virtual para inspeccionarla y capturar pruebas. Las acciones de control siguen requiriendo confirmación o el modo de control activado.",
+  "Opening Cleanup Lab…": "Abriendo Cleanup Lab…",
+  "macOS control stopped": "Control de macOS detenido",
+  "Could not stop macOS control": "No se pudo detener el control de macOS",
+  "That command is not available": "Ese comando no está disponible",
+  "The console did not answer.": "La consola no respondió."
 }

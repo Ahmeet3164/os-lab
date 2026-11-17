@@ -2837,5 +2837,10 @@
   "Stopping macOS Lab control…": "macOS Lab denetimi durduruluyor…",
   "macOS Lab control stopped.": "macOS Lab denetimi durduruldu.",
   "Could not stop macOS Lab control:": "macOS Lab denetimi durdurulamadı:",
-  "Submission review opened. Select a Terminal or VM window to inspect and capture evidence. Control actions still require confirmation or armed mode.": "Teslim incelemesi açıldı. İncelemek ve kanıt yakalamak için bir Terminal veya VM penceresi seçin. Denetim eylemleri yine onay veya etkinleştirilmiş denetim modu gerektirir."
+  "Submission review opened. Select a Terminal or VM window to inspect and capture evidence. Control actions still require confirmation or armed mode.": "Teslim incelemesi açıldı. İncelemek ve kanıt yakalamak için bir Terminal veya VM penceresi seçin. Denetim eylemleri yine onay veya etkinleştirilmiş denetim modu gerektirir.",
+  "Opening Cleanup Lab…": "Temizlik Laboratuvarı açılıyor…",
+  "macOS control stopped": "macOS denetimi durduruldu",
+  "Could not stop macOS control": "macOS denetimi durdurulamadı",
+  "That command is not available": "Bu komut kullanılamıyor",
+  "The console did not answer.": "Konsol yanıt vermedi."
 }

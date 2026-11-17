@@ -2837,5 +2837,10 @@
   "Stopping macOS Lab control…": "جارٍ إيقاف التحكم في مختبر macOS…",
   "macOS Lab control stopped.": "تم إيقاف التحكم في مختبر macOS.",
   "Could not stop macOS Lab control:": "تعذّر إيقاف التحكم في مختبر macOS:",
-  "Submission review opened. Select a Terminal or VM window to inspect and capture evidence. Control actions still require confirmation or armed mode.": "فُتحت مراجعة التسليم. اختر نافذة Terminal أو آلة افتراضية لفحصها والتقاط الأدلة. ما زالت إجراءات التحكم تتطلب التأكيد أو تفعيل وضع التحكم."
+  "Submission review opened. Select a Terminal or VM window to inspect and capture evidence. Control actions still require confirmation or armed mode.": "فُتحت مراجعة التسليم. اختر نافذة Terminal أو آلة افتراضية لفحصها والتقاط الأدلة. ما زالت إجراءات التحكم تتطلب التأكيد أو تفعيل وضع التحكم.",
+  "Opening Cleanup Lab…": "جارٍ فتح مختبر التنظيف…",
+  "macOS control stopped": "تم إيقاف التحكم في macOS",
+  "Could not stop macOS control": "تعذّر إيقاف التحكم في macOS",
+  "That command is not available": "هذا الأمر غير متاح",
+  "The console did not answer.": "لم تستجب وحدة التحكم."
 }
