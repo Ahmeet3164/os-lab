@@ -414,10 +414,50 @@ mirror (macOS 14+, so older hosts simply never load it). The framework's
 call WidgetCenter. The intent writes a timestamped request file; the host
 consumes it once on window focus with a 120-second max age, then drives
 `window.__oslabQuickClean`, which follows the dashboard's plan → confirm →
-run flow. `oslab://` deep links register through tauri-plugin-deep-link and
-land as whitelisted routes in `window.__oslabNavigate` (tab ids or overview
-section ids, each section id retargeting to the tab that hosts it:
-permissions, widgets and bookmarks live on Settings).
+run flow. `oslab://` URLs land as whitelisted routes in `window.__oslabNavigate`
+(tab ids or overview section ids, each section id retargeting to the tab that
+hosts it: permissions, widgets and bookmarks live on Settings).
+
+### Command bridge (AGQ-01)
+
+[[app/src-tauri/src/deeplink.rs]] gives the host one URL grammar so an external
+command button (aBigQ and its family) drives os-lab the way the widget intents
+do: `oslab://<command>[/<route>]`.
+
+URL parsers put the token after the scheme in the **host**, so `oslab://scan`
+is host `scan` with an empty path. The parser reads both spellings and always
+answers with a typed command; nothing is navigated or executed while parsing.
+
+| URL | Effect |
+|-----|--------|
+| `oslab://scan`, `oslab:///scan`, `oslab://open/scan` | open that dashboard route |
+| `oslab://open/labs/macos`, `oslab://jobs`, … | open a plain page |
+| `oslab://panic-stop` | `POST /api/labs/macos/stop` — disarm, close sessions |
+| `oslab://quick-clean` | open Cleanup and run its quick-clean flow |
+| anything else | refused and shown as such |
+
+The bridge can do exactly three things, and two of them are the safe ones the
+dashboard already owns: navigation, the idempotent panic stop, and opening the
+cleanup plan. It cannot delete, arm control, click, type or run a lab action —
+those stay behind the dashboard's preview → token → run and plan → confirm
+flow. `panic-stop` is the only command that reaches an endpoint, and its path is
+a constant in the same file (`endpoint()`), never assembled from URL text.
+
+[[app/src-tauri/src/console.rs]] adds `post_action`, a loopback `POST` with an
+empty JSON body that returns the console's own error text on a non-2xx answer,
+so a failure is displayed rather than swallowed.
+
+[[dashboard/src/shell/command-bridge.tsx]] owns `window.__oslabCommand` in the
+shell, so a command works on **every** page, not only on Cleanup or the macOS
+Lab: routes go to the island router, `panic-stop` reports the result in a
+dismissible banner (with the number of closed sessions), and `quick-clean`
+hands off to the Cleanup page's dialog. A command that needs a page change waits
+in an outbox and is delivered on the page's own load event, so the order is
+always page → directive, never a timer.
+
+On Linux and Windows a command button starts a second instance whose only
+argument is the URL; the single-instance callback parses it, because this build
+does not enable the deep-link plugin's `deep-link` forwarding feature.
 
 ### Release embedding (CLW-08/09)
 
@@ -564,7 +604,8 @@ Trash by default, honest failures), the path rules, the CLI exit codes, the
 volume inventory, the privileged actions, the relocation executor, the
 permission probes and classification, the monitor triggers and store, the
 bookmarks, the custom overlay, the explorer walker and the widget snapshot
-fold; the desktop app's Rust bridge adds `cargo test widget::`.
+fold; the desktop app's Rust bridge adds `cargo test widget::`, and the command
+bridge adds `cargo test deeplink::` plus `cargo test console::tests::post_action`.
 Tests live in [[cleanup-lab/engine/tests]]; the console's typed job contract is
 covered by [[android-lab/lab/tests/test_cleanup_console.py]]. [[scripts/run-tests.sh]]
 runs the same suites next to the reference code tests, the Android suite, `bash -n`,
