@@ -10,7 +10,7 @@
 
 ### Test 1 — Connection Timeout
 Command:
-`python linux-lab/scripts/ssh_troubleshooter.py "Connection timed out"`
+`python3 linux-lab/scripts/ssh_doctor.py "Connection timed out"`
 
 Expected result: `TIMEOUT`
 
@@ -20,7 +20,7 @@ Status: PASS
 
 ### Test 2 — Authentication Failure
 Command:
-`python linux-lab/scripts/ssh_troubleshooter.py "Permission denied"`
+`python3 linux-lab/scripts/ssh_doctor.py "Permission denied"`
 
 Expected result: `AUTHENTICATION`
 
@@ -30,7 +30,7 @@ Status: PASS
 
 ### Test 3 — Loopback Address
 Command:
-`python linux-lab/scripts/ssh_troubleshooter.py "127.0.1.1"`
+`python3 linux-lab/scripts/ssh_doctor.py "127.0.1.1"`
 
 Expected result: `LOOPBACK`
 
@@ -40,7 +40,7 @@ Status: PASS
 
 ### Test 4 — Firewall Block
 Command:
-`python linux-lab/scripts/ssh_troubleshooter.py "Firewall blocked"`
+`python3 linux-lab/scripts/ssh_doctor.py "Firewall blocked"`
 
 Expected result: `FIREWALL`
 
@@ -50,7 +50,7 @@ Status: PASS
 
 ### Test 5 — Wrong Network Adapter
 Command:
-`python linux-lab/scripts/ssh_troubleshooter.py "Wrong adapter"`
+`python3 linux-lab/scripts/ssh_doctor.py "Wrong adapter"`
 
 Expected result: `ADAPTER`
 
@@ -64,25 +64,6 @@ All five manual SSH error classification tests passed successfully.
 The script identifies common SSH connection problems and provides troubleshooting suggestions.
 
 Note: These tests verify message classification, not live SSH connectivity.
-# OS-21 Dogrulama (Verification) — Boot-Time Python Service Starter (systemd)
 
-## 1. Calistirma Komutlari
-
-Servis birim dosyasini (.service) uretmek ve onizlemek icin:
-    ./linux-lab/scripts/os-21-service-starter.sh
-
-Servisi systemd altina kurmak, acilista otomatik baslayacak sekilde etkinlestirmek (enable) ve status / journalctl ciktilariyla dogrulamak icin:
-    sudo ./linux-lab/scripts/os-21-service-starter.sh --install
-
-## 2. Beklenen Cikti
-
-    === [1/4] loop.py dosyasi kontrol ediliyor ===
-    === [2/4] Systemd .service birim dosyasi olusturuluyor ===
-    === [3/4] Servis sisteme kuruluyor ve etkinlestiriliyor (enable & start) ===
-    === [4/4] Dogrulama: enable / status / journalctl ===
-    -> Enabled durumu:
-    enabled
-    -> Servis durumu (status):
-    Active: active (running)
-    -> Servis loglari (journalctl):
-    [OS-21] Python systemd servisi aktif! Sayac: 1
+## Automated tests
+`python3 -m pytest linux-lab/tests/test_ssh_doctor.py` (8 passed; run by the instructor on macOS in a sandbox on 24.11). The five manual tests above were run by the student on Windows 11 with the earlier file name; the commands use the current name and `python3`.

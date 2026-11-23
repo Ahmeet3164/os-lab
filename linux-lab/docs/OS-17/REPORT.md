@@ -9,14 +9,14 @@ The tool analyzes common SSH error messages and provides explanations and sugges
 The script detects five common SSH problems:
 
 1. Connection timed out
-2. Authentication failure
-3. Loopback IP address (127.0.1.1)
+2. Authentication failure (including "wrong password" / "incorrect password")
+3. Loopback address (any 127.x.x.x, `::1` or `localhost`; checked before the timeout rule)
 4. Firewall restrictions
 5. Incorrect network adapter
 
 ## Implementation
 - Programming language: Python 3
-- Script: `linux-lab/scripts/ssh_troubleshooter.py`
+- Script: `linux-lab/scripts/ssh_doctor.py`
 - Uses Python standard libraries
 - No additional Python packages required
 
@@ -25,7 +25,7 @@ Five manual tests were performed successfully.
 
 All five error categories returned the expected results.
 
-Detailed verification commands and results are documented in `linux-lab/VERIFY.md`.
+Detailed verification commands and results are documented in `linux-lab/docs/OS-17/VERIFY.md`. Review fixes (24.11, instructor patch): script renamed to `ssh_doctor.py` to match the dashboard, scoped/control-byte `--host` input rejected, wider loopback and password detection, and 8 regression tests in `linux-lab/tests/test_ssh_doctor.py`.
 
 ## What I Learned
 During this project, I learned how to:
@@ -40,15 +40,4 @@ During this project, I learned how to:
 The tool classifies supplied error messages. It does not perform live SSH connection checks or automatically modify firewall and network settings.
 
 ## Conclusion
-The OS-17 SSH Connection Troubleshooter provides a simple command-line tool for identifying common SSH errors and suggesting possible fixes.# OS-21 Vize Projesi Raporu — Boot-Time Python Service Starter (systemd)
-
-## 1. Projede Ne Yaptim?
-Bu calismada OS-21 (Boot-Time Python Service Starter) gorevi kapsaminda Linux sistem acilisinda (boot) otomatik olarak baslayan bir Python arka plan servisi hazirladim:
-- linux-lab/scripts/loop.py: Belirli araliklarla (time.sleep(5)) standart ciktiya (stdout / flush=True) calisma durumu logu basan dongusel bir Python betigi yazdim.
-- linux-lab/scripts/os-21-service-starter.sh: loop.py betigini calistiracak minimal .service (systemd unit) dosyasini ureten, --install parametresi verildiginde servisi /etc/systemd/system/ altina kopyalayip systemctl daemon-reload ve systemctl enable --now ile aktif eden, ardindan systemctl is-enabled, systemctl status ve journalctl -u komutlariyla servisin calistigini dogrulayan bir Bash araci gelistirdim.
-
-## 2. Git ve Pull Request (PR) Surecinde Ne Ogrendim?
-- Acik kaynak bir projeyi kendi hesabima fork etmeyi ve yerel gelistirme ortamima git clone ile indirmeyi ogrendim.
-- Ana dali (master) bozmadan izole bir sekilde calismak icin gorev ozelinde yeni bir branch (dal) (os-21-systemd-service) olusturmanin onemini kavradim.
-- Degisiklikleri gondermeden once yerel dogrulama testlerini (./scripts/run-tests.sh --quick) calistirarak kod kalitesini ve kabuk sozdizimini (bash -n) kontrol etmeyi deneyimledim.
-- Anlamli commit mesajlari yazarak degisiklikleri kendi fork depoma (git push) aktarmayi ve ana projeye Pull Request (PR) acarak acik kaynak katkisi sunma is akisini uygulamali olarak ogrendim.
+The OS-17 SSH Connection Troubleshooter provides a simple command-line tool for identifying common SSH errors and suggesting possible fixes.

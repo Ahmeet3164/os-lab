@@ -185,3 +185,9 @@ Alternatif yönetim veritabanı, kopyalar ve sentetik testler için kullanılabi
 ve ayrıştırma davranışlarını çevrimdışı sınar. dpkg varsa geçici sentetik
 veritabanında gerçek komutla bütünleşme testi de çalışır. Canlı Ubuntu
 kanıtıyla sentetik testlerin ayrımı [[linux-lab/os-23/VERIFY.md]] içinde açıklanır.
+
+## OS-17 SSH Troubleshooter
+
+[[linux-lab/scripts/ssh_doctor.py]] classifies a pasted SSH error into timeout, authentication, loopback, firewall, adapter or unknown, and prints an explanation and a fix.
+
+Loopback (127.x.x.x, `::1`, `localhost`) is checked first because it is the real cause of many timeouts. A `--host` value with an IPv6 scope id or control bytes is rejected without being echoed. It never opens a connection or changes settings. [[linux-lab/tests/test_ssh_doctor.py]] covers the rules.
