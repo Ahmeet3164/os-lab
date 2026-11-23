@@ -148,6 +148,11 @@ in nft, one tcp and one udp command in UFW), never all traffic. A port on `icmp`
 is ignored by both backends. Items that are not ports or ascending ranges in
 1–65535 (`esp`, `80,,443`, `500:400`) are skipped with a comment and a stderr
 warning. Notes and names are flattened to one line before they go into comments.
+
+A multi-site company keeps one rule set per branch and is rendered one site at a time with
+`--branch`. `siber-guvenlik-sirketi` declares four sites (`istanbul-hq`, `sivas-soc`,
+`ankara-academy`, `dubai-field`) in [[firewall-lab/companies/siber-guvenlik-sirketi/company.json]];
+each renders on its own to UFW, nftables or the table form.
 [[.github/workflows/firewall-lab.yml]] renders every branch of every company and
 checks the output with `nft -c` and `bash -n`, and rejects duplicate branch ids.
 
