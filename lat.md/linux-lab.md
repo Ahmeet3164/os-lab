@@ -170,3 +170,18 @@ Validation and install steps, in order:
 
 Only install trusted `.deb` packages. Installation requires sudo
 permissions and may modify the operating system.
+
+## OS-23 salt okunur dpkg envanteri
+
+[[linux-lab/scripts/dpkg_inventory.py]], paket listesini, paket dosyalarını ve
+tam yoldan dosya sahipliğini sürümlü JSON olarak sunar.
+
+Paket durumu ile kurulu paket sayısı ayrı tutulur. Mimari ekleri korunur;
+dpkg arama jokerleri kaçırılır ve sonuç tam yolla karşılaştırılır. Araç sembolik
+bağlantıları çözmez, paketleri değiştirmez, root veya ağ erişimi istemez.
+Alternatif yönetim veritabanı, kopyalar ve sentetik testler için kullanılabilir.
+
+[[linux-lab/tests/test_dpkg_inventory.py]], komut hataları, girdi doğrulama
+ve ayrıştırma davranışlarını çevrimdışı sınar. dpkg varsa geçici sentetik
+veritabanında gerçek komutla bütünleşme testi de çalışır. Canlı Ubuntu
+kanıtıyla sentetik testlerin ayrımı [[linux-lab/os-23/VERIFY.md]] içinde açıklanır.
